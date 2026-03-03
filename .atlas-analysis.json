@@ -1,0 +1,92 @@
+{
+  "projectType": "saas",
+  "projectName": "TaskForge Studio",
+  "projectDescription": "A real-time collaborative whiteboard application for teams to brainstorm, plan, and create together.",
+  "theme": "palm",
+  "primaryColor": "#3B82F6",
+  "lightColor": "#60A5FA",
+  "darkColor": "#2563EB",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/boards",
+              "features/canvas",
+              "features/collaboration",
+              "features/organizations"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/authentication",
+              "guides/real-time-sync",
+              "guides/customization"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Convex API",
+            "pages": [
+              "api/board-operations",
+              "api/user-favorites"
+            ]
+          },
+          {
+            "group": "Canvas Types",
+            "pages": [
+              "api/layers",
+              "api/canvas-modes",
+              "api/colors"
+            ]
+          },
+          {
+            "group": "Hooks",
+            "pages": [
+              "api/use-api-mutation",
+              "api/use-delete-layers",
+              "api/use-selection-bounds"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time collaborative canvas with multiplayer cursors",
+    "Multiple drawing tools (rectangles, ellipses, text, notes, pencil)",
+    "Organization-based board management",
+    "Board favorites and search functionality",
+    "Authentication and user management with Clerk",
+    "Undo/redo support with history tracking"
+  ],
+  "publicApiSurface": [
+    "board.create - Create a new board",
+    "board.remove - Delete a board",
+    "board.update - Update board title",
+    "board.favorite - Add board to favorites",
+    "board.unFavorite - Remove board from favorites",
+    "board.get - Get board by ID",
+    "boards.get - Query boards with search and filters",
+    "Canvas component - Main collaborative canvas",
+    "useApiMutation - Hook for Convex mutations",
+    "useDeleteLayers - Hook for deleting canvas layers",
+    "useSelectionBounds - Hook for selection boundaries"
+  ]
+}
