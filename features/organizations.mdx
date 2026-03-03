@@ -1,0 +1,467 @@
+---
+title: Organizations
+description: Manage teams, workspaces, and member access in TaskForge Studio
+---
+
+Organizations in TaskForge Studio provide isolated workspaces for teams. Each organization has its own set of boards, members, and permissions, keeping your work organized and secure.
+
+## Overview
+
+Organizations are powered by Clerk's organization management system, providing:
+
+- Multi-tenant workspace isolation
+- Team member management
+- Secure access control
+- Board ownership and organization
+
+<Note>
+Personal accounts are hidden in TaskForge Studio - you must create or join an organization to use boards.
+</Note>
+
+## Organization Sidebar
+
+The organization sidebar is your main navigation hub, located on the left side of the dashboard.
+
+### Components
+
+Implemented in `app/(dashboard)/_components/org-sidebar.tsx:19-87`:
+
+```typescript
+export const OrgSidebar = () => {
+  const searchParams = useSearchParams();
+  const favorites = searchParams.get('favorites');
+
+  return (
+    <div className='hidden lg:flex flex-col space-y-6 w-[206px] pl-5 pt-5'>
+      <Link href='/'>
+        <div className='flex items-center gap-x-2'>
+          <Image src='/logo.svg' alt='Logo' height={60} width={60} />
+          <span className={cn('font-semiBold text-2xl', font.className)}>
+            Board
+          </span>
+        </div>
+      </Link>
+      <OrganizationSwitcher
+        hidePersonal
+        appearance={{
+          elements: {
+            rootBox: {
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+            },
+            organizationSwitcherTrigger: {
+              width: '100%',
+              minWidth: '180px',
+              padding: '6px',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+              display: 'flex',
+              justifyContent: 'space-between',
+              backgroundColor: 'white',
+            },
+          },
+        }}
+      />
+      {/* Navigation buttons */}
+    </div>
+  );
+};
+```
+
+### Navigation Options
+
+The sidebar provides two main views:
+
+<CardGroup cols={2}>
+  <Card title="Team Boards" icon="layout-grid">
+    View all boards created by anyone in your organization. This is the default landing page.
+  </Card>
+  
+  <Card title="Favorites" icon="star">
+    Quick access to boards you've personally marked as favorites, filtered to your current organization.
+  </Card>
+</CardGroup>
+
+Implementation in `app/(dashboard)/_components/org-sidebar.tsx:56-84`:
+
+```typescript
+<Button
+  asChild
+  size='lg'
+  variant={favorites ? 'ghost' : 'secondary'}
+  className='font-normal justify-start p-x-2 w-full'
+>
+  <Link href='/'>
+    <LayoutIcon className='w-4 h-4 mr-2' />
+    Team Boards
+  </Link>
+</Button>
+<Button
+  asChild
+  size='lg'
+  variant={favorites ? 'secondary' : 'ghost'}
+  className='font-normal justify-start p-x-2 w-full'
+>
+  <Link
+    href={{
+      pathname: '/',
+      query: { favorites: true },
+    }}
+  >
+    <StarIcon className='w-4 h-4 mr-2' />
+    Favorites
+  </Link>
+</Button>
+```
+
+## Organization Switcher
+
+Switch between organizations or create new ones using Clerk's OrganizationSwitcher component.
+
+### Features
+
+<Steps>
+  <Step title="View current organization">
+    The switcher displays your currently active organization's name and logo.
+  </Step>
+  
+  <Step title="Switch organizations">
+    Click the switcher to see all organizations you're a member of and select a different one.
+  </Step>
+  
+  <Step title="Create new organization">
+    Use the "Create Organization" option to start a new team workspace.
+  </Step>
+  
+  <Step title="Manage settings">
+    Access organization settings to manage members, permissions, and billing.
+  </Step>
+</Steps>
+
+### Configuration
+
+The `hidePersonal` property ensures users must work within organizations:
+
+```typescript
+<OrganizationSwitcher
+  hidePersonal
+  appearance={{
+    elements: {
+      organizationSwitcherTrigger: {
+        width: '100%',
+        minWidth: '180px',
+        padding: '6px',
+        borderRadius: '8px',
+        border: '1px solid #e5e7eb',
+      },
+    },
+  }}
+/>
+```
+
+<Note>
+The sidebar is hidden on mobile and tablet devices (below 1024px width) to maximize canvas space on smaller screens.
+</Note>
+
+## Board Organization
+
+Boards are scoped to organizations, providing complete workspace isolation.
+
+### Organization Scoping
+
+Every board belongs to exactly one organization, defined by the `orgId` field:
+
+```typescript
+const board = await ctx.db.insert('boards', {
+  title: args.title,
+  orgId: args.orgId,  // Organization identifier
+  authorId: identity.subject,
+  authorName: identity.name!,
+  imageUrl: randomImage,
+});
+```
+
+### Querying Boards
+
+All board queries are filtered by organization ID to ensure isolation:
+
+From `convex/boards.ts:5-71`:
+
+```typescript
+export const get = query({
+  args: {
+    orgId: v.string(),
+    search: v.optional(v.string()),
+    favorites: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error('Unauthorized');
+
+    // Search within organization
+    if (title) {
+      boards = await ctx.db
+        .query('boards')
+        .withSearchIndex('search_title', (q) =>
+          q.search('title', title).eq('orgId', args.orgId)
+        )
+        .collect();
+    } else {
+      boards = await ctx.db
+        .query('boards')
+        .withIndex('by_org', (q) => q.eq('orgId', args.orgId))
+        .collect();
+    }
+
+    return boards;
+  },
+});
+```
+
+### Data Isolation
+
+Organization boundaries ensure:
+
+- **Board visibility** - You only see boards from your current organization
+- **Search scope** - Searches only return results within the active organization
+- **Favorites** - Favorite boards are scoped per user per organization
+- **Access control** - Users can only access boards in organizations they're members of
+
+## Creating Boards in Organizations
+
+When you create a board, it's automatically associated with your active organization.
+
+Implementation in `app/(dashboard)/_components/new-board-button.tsx:15-47`:
+
+```typescript
+export const NewBoardButton = ({ orgId, disabled }: NewButtonProps) => {
+  const router = useRouter();
+  const { mutate, pending } = useApiMutation(api.board.create);
+
+  const onClick = () => {
+    mutate({
+      orgId,
+      title: 'Untitled',
+    })
+      .then((id) => {
+        toast.success('Board created');
+        router.push(`/board/${id}`);
+      })
+      .catch(() => toast.error('Failed to create board'));
+  };
+
+  return (
+    <button
+      disabled={disabled || pending}
+      onClick={onClick}
+      className={cn(
+        'col-span-1 aspect-[100/110] bg-blue-600 rounded-lg hover:bg-blue-800',
+        (disabled || pending) &&
+          'opacity-75 hover:bg-blue-600 cursor-not-allowed'
+      )}
+    >
+      <div className='flex flex-col items-center'>
+        <PlusIcon className='h-5 w-5 text-white stroke-1' />
+        <p className='text-sm text-white font-light mt-2'>New Board</p>
+      </div>
+    </button>
+  );
+};
+```
+
+<Note>
+The board creation button receives the current `orgId` as a prop, ensuring new boards are always created in the correct organization.
+</Note>
+
+## Favorites Per Organization
+
+Favorites are user-specific but scoped to each organization.
+
+### Favorite Data Model
+
+From `convex/board.ts:116-120`:
+
+```typescript
+await ctx.db.insert('userFavorites', {
+  userId,
+  boardId: board._id,
+  orgId: args.orgId,
+});
+```
+
+This three-way relationship means:
+
+- You can favorite the same board in different organizations (if it exists)
+- Your favorites in one organization don't appear in another
+- Switching organizations shows only that organization's favorites
+
+### Querying Favorites
+
+Favorites are retrieved using the `by_user_org` index:
+
+```typescript
+if (args.favorites) {
+  const favoritedBoards = await ctx.db
+    .query('userFavorites')
+    .withIndex('by_user_org', (q) =>
+      q.eq('userId', identity.subject).eq('orgId', args.orgId)
+    )
+    .order('desc')
+    .collect();
+
+  const ids = favoritedBoards.map((b) => b.boardId);
+  const boards = await getAllOrThrow(ctx.db, ids);
+
+  return boards.map((board) => {
+    return { ...board, isFavorite: true };
+  });
+}
+```
+
+## Member Management
+
+While member management is handled through Clerk's UI, TaskForge Studio integrates organization membership for access control.
+
+### Access Control
+
+Access is controlled at multiple levels:
+
+1. **Authentication** - Users must be logged in via Clerk
+2. **Organization membership** - Users must be members of the organization to see its boards
+3. **Board queries** - All queries filter by organization ID automatically
+
+### Author Attribution
+
+When boards are created, the author's information is stored:
+
+```typescript
+const board = await ctx.db.insert('boards', {
+  title: args.title,
+  orgId: args.orgId,
+  authorId: identity.subject,
+  authorName: identity.name!,
+  imageUrl: randomImage,
+});
+```
+
+This enables:
+
+- Displaying who created each board
+- Potential future permission systems
+- Audit trails for board creation
+
+## Board Display
+
+Boards are displayed in a responsive grid on the dashboard.
+
+From `app/(dashboard)/_components/board-list.tsx:51-76`:
+
+```typescript
+return (
+  <div>
+    <h2 className='text-3xl'>
+      {query.favorites ? 'Favorite Boards' : 'Team Boards'}
+    </h2>
+    <div className='grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-5 mt-8 pb-10'>
+      <NewBoardButton orgId={orgId} />
+      {data?.map((board) => {
+        return (
+          <BoardCard
+            key={board._id}
+            id={board._id}
+            title={board.title}
+            imageUrl={board.imageUrl}
+            authorId={board.authorId}
+            authorName={board.authorName}
+            createdAt={board._creationTime}
+            orgId={board.orgId}
+            isFavorite={board.isFavorite}
+          />
+        );
+      })}
+    </div>
+  </div>
+);
+```
+
+### Responsive Grid
+
+The board grid adapts to screen size:
+
+| Screen Size | Columns |
+|-------------|--------|
+| Mobile (default) | 1 |
+| Small (640px+) | 2 |
+| Medium (768px+) | 4 |
+| Large (1024px+) | 4 |
+| XL (1280px+) | 5 |
+| 2XL (1536px+) | 6 |
+
+## Empty States
+
+TaskForge Studio provides helpful empty states for different scenarios:
+
+<AccordionGroup>
+  <Accordion title="Empty Boards">
+    When an organization has no boards, users see a prompt to create their first board with the "New Board" button.
+  </Accordion>
+  
+  <Accordion title="Empty Favorites">
+    When you haven't favorited any boards yet, a message encourages you to star boards for quick access.
+  </Accordion>
+  
+  <Accordion title="Empty Search">
+    When a search returns no results, users see a message indicating no boards match their query.
+  </Accordion>
+  
+  <Accordion title="Empty Organization">
+    When you create a new organization, you start with a clean slate and can begin creating boards immediately.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Organize by project or team" icon="folder">
+    Create separate organizations for different projects, departments, or client work to keep boards organized and access controlled.
+  </Card>
+  
+  <Card title="Use descriptive board names" icon="tag">
+    Clear board titles make it easier for team members to find the right workspace, especially in organizations with many boards.
+  </Card>
+  
+  <Card title="Leverage favorites" icon="star">
+    Favorite active project boards to access them quickly, and unfavorite completed projects to keep your workspace focused.
+  </Card>
+  
+  <Card title="Regular cleanup" icon="trash">
+    Periodically review and delete unused boards to keep your organization's workspace clean and performant.
+  </Card>
+</CardGroup>
+
+## Switching Organizations
+
+When you switch organizations:
+
+1. **Context changes** - All boards, favorites, and searches switch to the new organization
+2. **URL updates** - The dashboard URL maintains your current organization context
+3. **Data reloads** - Board lists refresh to show the new organization's content
+4. **Favorites reset** - Your favorite filter applies to the new organization's boards
+
+<Warning>
+Boards are not shared between organizations. If you need the same board in multiple organizations, you'll need to create separate copies.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Boards" icon="layout-grid" href="/features/boards">
+    Learn how to create and manage boards within your organization
+  </Card>
+  
+  <Card title="Collaboration" icon="users" href="/features/collaboration">
+    Discover how team members collaborate in real-time
+  </Card>
+</CardGroup>

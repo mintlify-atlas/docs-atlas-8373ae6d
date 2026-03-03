@@ -1,0 +1,394 @@
+---
+title: Real-time Synchronization
+description: Implement real-time collaboration features using Liveblocks in TaskForge Studio
+---
+
+TaskForge Studio uses [Liveblocks](https://liveblocks.io) to power real-time collaboration features including cursor presence, live drawing, and synchronized state across multiple users.
+
+## Architecture Overview
+
+The real-time system consists of:
+
+1. **Liveblocks Client** - Manages WebSocket connections and sync
+2. **Room Provider** - Scopes collaboration to specific boards
+3. **Presence** - Tracks user cursors and selections
+4. **Storage** - Synchronizes drawing layers across clients
+
+## Configuration
+
+<Steps>
+  <Step title="Configure the Liveblocks client">
+    Set up the Liveblocks client in `liveblocks.config.ts`:
+
+    ```typescript liveblocks.config.ts
+    import { createClient, LiveList, LiveMap, LiveObject } from '@liveblocks/client';
+    import { createRoomContext } from '@liveblocks/react';
+    import { Layer, Color } from './types/canvas';
+
+    const client = createClient({
+      throttle: 16,
+      authEndpoint: '/api/liveblocks-auth',
+    });
+
+    type Presence = {
+      cursor: { x: number; y: number } | null;
+      selection: string[];
+    };
+
+    type Storage = {
+      layers: LiveMap<string, LiveObject<Layer>>;
+      layerIds: LiveList<string>;
+    };
+
+    type UserMeta = {
+      id?: string;
+      info?: {
+        name?: string;
+        picture?: string;
+      };
+    };
+
+    export const {
+      suspense: {
+        RoomProvider,
+        useMyPresence,
+        useUpdateMyPresence,
+        useOthers,
+        useOthersConnectionIds,
+        useOther,
+        useStorage,
+        useMutation,
+      },
+    } = createRoomContext<Presence, Storage, UserMeta>(client);
+    ```
+
+    <Info>
+      The `throttle: 16` setting updates at ~60fps for smooth cursor movement.
+    </Info>
+  </Step>
+
+  <Step title="Create the authentication endpoint">
+    Implement the Liveblocks authentication endpoint at `app/api/liveblocks-auth/route.ts`:
+
+    ```typescript app/api/liveblocks-auth/route.ts
+    import { auth, currentUser } from '@clerk/nextjs/server';
+    import { Liveblocks } from '@liveblocks/node';
+    import { ConvexHttpClient } from 'convex/browser';
+    import { api } from '@/convex/_generated/api';
+
+    const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    const liveblocks = new Liveblocks({
+      secret: process.env.LIVEBLOCKS_SECRET_KEY!,
+    });
+
+    export async function POST(request: Request) {
+      const authorization = await auth();
+      const user = await currentUser();
+
+      if (!authorization || !user) {
+        return new Response('Unauthorized', { status: 403 });
+      }
+
+      const { room } = await request.json();
+      const board = await convex.query(api.board.get, { id: room });
+
+      if (board?.orgId !== authorization.orgId) {
+        return new Response('Unauthorized', { status: 403 });
+      }
+
+      const userInfo = {
+        name: user.firstName || 'Teammate',
+        picture: user.imageUrl,
+      };
+
+      const session = liveblocks.prepareSession(user.id, { userInfo });
+
+      if (room) {
+        session.allow(room, session.FULL_ACCESS);
+      }
+
+      const { status, body } = await session.authorize();
+      return new Response(body, { status });
+    }
+    ```
+
+    This endpoint:
+    - Authenticates users with Clerk
+    - Verifies board access via Convex
+    - Creates a Liveblocks session with user metadata
+    - Grants room access permissions
+  </Step>
+
+  <Step title="Create a Room wrapper component">
+    Set up the Room provider in `components/room.tsx`:
+
+    ```typescript components/room.tsx
+    'use client';
+
+    import { ReactNode } from 'react';
+    import { RoomProvider } from '@/liveblocks.config';
+    import { ClientSideSuspense } from '@liveblocks/react';
+    import { LiveList, LiveMap, LiveObject } from '@liveblocks/client';
+    import { Layer } from '@/types/canvas';
+
+    interface RoomProps {
+      children: React.ReactNode;
+      roomId: string;
+      fallback: NonNullable<ReactNode> | null;
+    }
+
+    export const Room = ({ children, roomId, fallback }: RoomProps) => {
+      return (
+        <RoomProvider
+          id={roomId}
+          initialPresence={{
+            cursor: null,
+            selection: [],
+          }}
+          initialStorage={{
+            layers: new LiveMap<string, LiveObject<Layer>>(),
+            layerIds: new LiveList(),
+          }}
+        >
+          <ClientSideSuspense fallback={fallback}>
+            {() => children}
+          </ClientSideSuspense>
+        </RoomProvider>
+      );
+    };
+    ```
+  </Step>
+
+  <Step title="Wrap your collaborative page">
+    Use the Room component in your board page:
+
+    ```typescript app/board/[boardId]/page.tsx
+    import { Canvas } from './_components/canvas';
+    import { Room } from '@/components/room';
+    import { Loading } from './_components/loading';
+
+    const BoardIdPage = ({ params }: { params: { boardId: string } }) => {
+      return (
+        <Room roomId={params.boardId} fallback={<Loading />}>
+          <Canvas boardId={params.boardId} />
+        </Room>
+      );
+    };
+
+    export default BoardIdPage;
+    ```
+  </Step>
+</Steps>
+
+## Environment Variables
+
+<CodeGroup>
+```bash .env.local
+# Liveblocks
+NEXT_PUBLIC_LIVEBLOCKS_PUBLIC_KEY=pk_prod_...
+LIVEBLOCKS_SECRET_KEY=sk_prod_...
+```
+</CodeGroup>
+
+## Implementing Cursor Presence
+
+Show real-time cursors for all connected users:
+
+### Display all cursors
+
+```typescript app/board/[boardId]/_components/cursors-presence.tsx
+'use client';
+
+import { memo } from 'react';
+import { useOthersConnectionIds } from '@/liveblocks.config';
+import { Cursor } from './cursor';
+
+const Cursors = () => {
+  const ids = useOthersConnectionIds();
+  return (
+    <>
+      {ids.map((connectionId) => (
+        <Cursor key={connectionId} connectionId={connectionId} />
+      ))}
+    </>
+  );
+};
+
+export const CursorsPresence = memo(() => {
+  return <Cursors />;
+});
+```
+
+### Render individual cursors
+
+```typescript app/board/[boardId]/_components/cursor.tsx
+'use client';
+
+import { connectionToColor } from '@/lib/utils';
+import { useOther } from '@/liveblocks.config';
+import { memo } from 'react';
+import { LuMousePointer2 } from 'react-icons/lu';
+
+interface CursorProps {
+  connectionId: number;
+}
+
+export const Cursor = memo(({ connectionId }: CursorProps) => {
+  const info = useOther(connectionId, (user) => user?.info);
+  const cursor = useOther(connectionId, (user) => user.presence.cursor);
+
+  const name = info?.name || 'Teammate';
+
+  if (!cursor) return null;
+
+  const { x, y } = cursor;
+
+  return (
+    <foreignObject
+      style={{ transform: `translateX(${x}px) translateY(${y}px)` }}
+      height={50}
+      width={name.length * 10 + 24}
+      className='relative drop-shadow-md'
+    >
+      <LuMousePointer2
+        className='h-5 w-5'
+        style={{
+          fill: connectionToColor(connectionId),
+          color: connectionToColor(connectionId),
+        }}
+      />
+      <div
+        className='absolute left-5 px-1.5 py-0.5 rounded-md text-sm text-white'
+        style={{ backgroundColor: connectionToColor(connectionId) }}
+      >
+        {name}
+      </div>
+    </foreignObject>
+  );
+});
+```
+
+### Update cursor position
+
+```typescript
+import { useUpdateMyPresence } from '@/liveblocks.config';
+
+function Canvas() {
+  const updateMyPresence = useUpdateMyPresence();
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const cursor = { x: e.clientX, y: e.clientY };
+    updateMyPresence({ cursor });
+  };
+
+  const handlePointerLeave = () => {
+    updateMyPresence({ cursor: null });
+  };
+
+  return (
+    <svg
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
+    >
+      {/* Canvas content */}
+    </svg>
+  );
+}
+```
+
+## Working with Storage
+
+Synchronize data across all clients using Liveblocks storage:
+
+### Reading from storage
+
+```typescript
+import { useStorage } from '@/liveblocks.config';
+
+function LayersList() {
+  const layerIds = useStorage((root) => root.layerIds);
+  
+  return (
+    <div>
+      {layerIds?.map((id) => (
+        <LayerItem key={id} id={id} />
+      ))}
+    </div>
+  );
+}
+```
+
+### Mutating storage
+
+```typescript
+import { useMutation } from '@/liveblocks.config';
+import { LiveObject } from '@liveblocks/client';
+
+function useCreateLayer() {
+  return useMutation(({ storage }, layer: Layer) => {
+    const layers = storage.get('layers');
+    const layerIds = storage.get('layerIds');
+    
+    const layerId = crypto.randomUUID();
+    layers.set(layerId, new LiveObject(layer));
+    layerIds.push(layerId);
+    
+    return layerId;
+  }, []);
+}
+```
+
+## Utility: Connection Colors
+
+Generate consistent colors for user cursors in `lib/utils.ts`:
+
+```typescript lib/utils.ts
+const COLORS = [
+  '#0000FF',
+  '#FF0000',
+  '#FFFF00',
+  '#FF6600',
+  '#00FF00',
+  '#6600FF',
+];
+
+export function connectionToColor(connectionId: number): string {
+  return COLORS[connectionId % COLORS.length];
+}
+```
+
+## Best Practices
+
+<Tip>
+  **Optimize re-renders**: Use `memo()` for cursor components and selective subscriptions with `useOther()` to prevent unnecessary re-renders.
+</Tip>
+
+<Warning>
+  **Room security**: Always validate that users have permission to access a room in your authentication endpoint.
+</Warning>
+
+<Note>
+  **Throttling**: The default throttle of 16ms provides smooth updates. Adjust based on your use case - lower for more precision, higher for reduced bandwidth.
+</Note>
+
+## Monitoring Connection Status
+
+```typescript
+import { useStatus } from '@/liveblocks.config';
+
+function ConnectionStatus() {
+  const status = useStatus();
+  
+  return (
+    <div>
+      Status: {status}
+      {/* "connecting" | "connected" | "reconnecting" | "disconnected" */}
+    </div>
+  );
+}
+```
+
+## Next Steps
+
+- Explore [Authentication](/guides/authentication) to secure your rooms
+- Learn about [Customization](/guides/customization) to style your collaborative UI

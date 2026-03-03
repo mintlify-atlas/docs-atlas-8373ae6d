@@ -1,0 +1,427 @@
+---
+title: Canvas
+description: Explore the infinite canvas workspace with drawing tools, shapes, and interactive elements
+---
+
+The Canvas is TaskForge Studio's infinite workspace where you create, draw, and collaborate. Built on SVG rendering with real-time synchronization, it provides a smooth and responsive drawing experience.
+
+## Canvas Overview
+
+The canvas is an unlimited 2D workspace that supports:
+
+- Infinite panning and zooming
+- Multiple layer types (shapes, text, notes)
+- Real-time collaboration with live cursors
+- Undo/redo with full history tracking
+- Object selection, transformation, and styling
+
+<Note>
+The canvas has a maximum limit of 100 layers per board to ensure optimal performance.
+</Note>
+
+## Drawing Tools
+
+Access the toolbar on the left side of the canvas to select different tools and modes.
+
+### Selection Tool
+
+The default mode for interacting with objects on the canvas.
+
+<Steps>
+  <Step title="Click the Select tool">
+    The mouse pointer icon activates selection mode.
+  </Step>
+  
+  <Step title="Click objects to select">
+    Click any shape, text, or note to select it. Selected objects show resize handles and a colored border.
+  </Step>
+  
+  <Step title="Drag to move">
+    Click and drag selected objects to reposition them on the canvas.
+  </Step>
+</Steps>
+
+Implementation in `app/board/[boardId]/_components/canvas.tsx:96-123`:
+
+```typescript
+const translateSelectedLayers = useMutation(
+  ({ storage, self }, point: Point) => {
+    if (canvasState.mode !== CanvasMode.Translating) {
+      return;
+    }
+
+    const offset = {
+      x: point.x - canvasState.current.x,
+      y: point.y - canvasState.current.y,
+    };
+
+    const liveLayers = storage.get('layers');
+
+    for (const id of self.presence.selection) {
+      const layer = liveLayers.get(id);
+
+      if (layer) {
+        layer.update({
+          x: layer.get('x') + offset.x,
+          y: layer.get('y') + offset.y,
+        });
+      }
+    }
+  },
+  [canvasState]
+);
+```
+
+### Shape Tools
+
+Create various shapes on your canvas:
+
+<CardGroup cols={2}>
+  <Card title="Rectangle" icon="square">
+    Create rectangular shapes for diagrams, wireframes, and layouts.
+  </Card>
+  
+  <Card title="Ellipse" icon="circle">
+    Draw circular and elliptical shapes for flowcharts and diagrams.
+  </Card>
+  
+  <Card title="Text" icon="font">
+    Add text labels and annotations to your board.
+  </Card>
+  
+  <Card title="Sticky Note" icon="note-sticky">
+    Create sticky notes for brainstorming and organizing ideas.
+  </Card>
+</CardGroup>
+
+### Inserting Layers
+
+When you select a shape tool and click on the canvas, a new layer is created with these default properties:
+
+- Position: Where you clicked on the canvas
+- Size: 100x100 pixels
+- Color: Last used color (defaults to red)
+
+Implementation in `app/board/[boardId]/_components/canvas.tsx:62-94`:
+
+```typescript
+const insertLayer = useMutation(
+  (
+    { storage, setMyPresence },
+    layerType:
+      | LayerType.Ellipse
+      | LayerType.Rectangle
+      | LayerType.Note
+      | LayerType.Text,
+    position: Point
+  ) => {
+    const liveLayers = storage.get('layers');
+
+    if (liveLayers.size >= MAX_LAYERS) return;
+
+    const liveLayerIds = storage.get('layerIds');
+    const layerId = nanoid();
+    const layer = new LiveObject({
+      type: layerType,
+      x: position.x,
+      y: position.y,
+      height: 100,
+      width: 100,
+      fill: lastUsedColor,
+    });
+
+    liveLayerIds.push(layerId);
+    liveLayers.set(layerId, layer);
+
+    setMyPresence({ selection: [layerId] }, { addToHistory: true });
+    setCavnasState({ mode: CanvasMode.None });
+  },
+  [lastUsedColor]
+);
+```
+
+<Warning>
+If you've reached the 100 layer limit, new layers cannot be created until you delete existing ones.
+</Warning>
+
+## Canvas Interactions
+
+### Panning
+
+Navigate around the infinite canvas:
+
+- **Mouse wheel**: Scroll vertically and horizontally to pan
+- **Trackpad**: Use two-finger swipe to pan in any direction
+
+Implementation in `app/board/[boardId]/_components/canvas.tsx:195-200`:
+
+```typescript
+const onWheel = useCallback((e: React.WheelEvent) => {
+  setCamera((camera) => ({
+    x: camera.x - e.deltaX,
+    y: camera.y - e.deltaY,
+  }));
+}, []);
+```
+
+### Multi-Selection
+
+Select multiple objects simultaneously:
+
+1. Click and drag on an empty area of the canvas
+2. A blue selection rectangle appears
+3. All objects within the rectangle are selected
+4. Release to complete the selection
+
+Implementation in `app/board/[boardId]/_components/canvas.tsx:131-149`:
+
+```typescript
+const updateSelectionNet = useMutation(
+  ({ storage, setMyPresence }, current: Point, origin: Point) => {
+    const layers = storage.get('layers').toImmutable();
+    setCavnasState({
+      mode: CanvasMode.SelectionNet,
+      origin,
+      current,
+    });
+    const ids = findIntersectingLayersWithRectanlge(
+      layerIds,
+      layers,
+      origin,
+      current
+    );
+
+    setMyPresence({ selection: ids });
+  },
+  [layerIds]
+);
+```
+
+### Resizing Objects
+
+Resize selected objects using corner handles:
+
+- Click and drag any of the 8 resize handles
+- Objects resize from the opposite corner
+- Proportions can be freely adjusted
+
+Implementation in `app/board/[boardId]/_components/canvas.tsx:161-181`:
+
+```typescript
+const resizeSelectedLayer = useMutation(
+  ({ storage, self }, point: Point) => {
+    if (canvasState.mode !== CanvasMode.Resizing) {
+      return;
+    }
+
+    const bounds = resizeBounds(
+      canvasState.initialBounds,
+      canvasState.corner,
+      point
+    );
+
+    const liveLayers = storage.get('layers');
+    const layer = liveLayers.get(self.presence.selection[0]);
+
+    if (layer) {
+      layer.update(bounds);
+    }
+  },
+  [canvasState]
+);
+```
+
+## Selection Tools
+
+When you select one or more objects, a floating toolbar appears above the selection with additional options.
+
+### Color Picker
+
+Change the fill color of selected objects:
+
+- Choose from preset colors
+- Apply color to all selected objects simultaneously
+- Color choice is remembered for new objects
+
+Implementation in `app/board/[boardId]/_components/selection-tools.tsx:66-76`:
+
+```typescript
+const setFill = useMutation(
+  ({ storage }, fill: Color) => {
+    const liveLayers = storage.get('layers');
+    setLastUsedColor(fill);
+
+    selection.forEach((id) => {
+      liveLayers.get(id)?.set('fill', fill);
+    });
+  },
+  [selection, setLastUsedColor]
+);
+```
+
+### Layer Ordering
+
+Control the z-index of objects:
+
+<CardGroup cols={2}>
+  <Card title="Bring to Front" icon="arrow-up">
+    Move selected objects to the top of the layer stack, appearing above all other objects.
+  </Card>
+  
+  <Card title="Send to Back" icon="arrow-down">
+    Move selected objects to the bottom of the layer stack, appearing behind all other objects.
+  </Card>
+</CardGroup>
+
+Implementation in `app/board/[boardId]/_components/selection-tools.tsx:23-64`:
+
+```typescript
+const moveToFront = useMutation(
+  ({ storage }) => {
+    const liveLayerIds = storage.get('layerIds');
+    const indices: number[] = [];
+
+    const arr = liveLayerIds.toArray();
+
+    for (let i = 0; i < arr.length; i++) {
+      if (selection.includes(arr[i])) {
+        indices.push(i);
+      }
+    }
+
+    for (let i = indices.length - 1; i >= 0; i--) {
+      liveLayerIds.move(
+        indices[i],
+        arr.length - 1 - (indices.length - 1 - i)
+      );
+    }
+  },
+  [selection]
+);
+```
+
+### Deleting Objects
+
+Remove selected objects from the canvas:
+
+- Click the trash icon in the selection toolbar
+- Press the Delete key (when implemented)
+- Deletion is added to the undo history
+
+## History Management
+
+The canvas includes full undo/redo support for all operations.
+
+### Keyboard Shortcuts
+
+| Action | Windows/Linux | Mac |
+|--------|---------------|-----|
+| Undo | Ctrl+Z | Cmd+Z |
+| Redo | Ctrl+Shift+Z | Cmd+Shift+Z |
+
+Implementation in `app/board/[boardId]/_components/canvas.tsx:306-327`:
+
+```typescript
+useEffect(() => {
+  function onKeyDown(e: KeyboardEvent) {
+    switch (e.key) {
+      case 'z': {
+        if (e.ctrlKey || e.metaKey) {
+          if (e.shiftKey) {
+            history.redo();
+          } else {
+            history.undo();
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  document.addEventListener('keydown', onKeyDown);
+
+  return () => {
+    document.removeEventListener('keydown', onKeyDown);
+  };
+}, [deleteLayers, history]);
+```
+
+### History Tracking
+
+These operations are tracked in the undo/redo history:
+
+- Creating new layers
+- Moving objects
+- Resizing objects
+- Changing colors
+- Deleting objects
+- Changing layer order
+
+<Note>
+History is paused during active operations (like dragging) and resumed when the operation completes to prevent cluttering the history stack with intermediate states.
+</Note>
+
+## Canvas Modes
+
+The canvas operates in different modes defined in `types/canvas.ts:1-9`:
+
+```typescript
+export enum CanvasMode {
+  None,           // Default selection mode
+  Pressing,       // Mouse button down
+  SelectionNet,   // Multi-select rectangle active
+  Translating,    // Moving selected objects
+  Inserting,      // Placing a new shape
+  Resizing,       // Resizing a selected object
+  Pencil,         // Drawing mode (future feature)
+}
+```
+
+## Layer Types
+
+The canvas supports five layer types defined in `types/canvas.ts:22-28`:
+
+```typescript
+export enum LayerType {
+  Rectangle,  // Rectangular shapes
+  Ellipse,    // Circular/elliptical shapes
+  Path,       // Freehand drawing paths
+  Text,       // Text labels
+  Note,       // Sticky notes
+}
+```
+
+Each layer type has consistent properties:
+
+- `x`, `y`: Position on the canvas
+- `width`, `height`: Dimensions
+- `fill`: RGB color object
+- `value`: Optional text content (for text and note layers)
+
+## Performance Considerations
+
+<AccordionGroup>
+  <Accordion title="Layer Limit">
+    The 100 layer maximum ensures smooth performance even with complex boards. This limit is enforced at `app/board/[boardId]/_components/canvas.tsx:40`.
+  </Accordion>
+  
+  <Accordion title="Render Optimization">
+    Only visible layers within the viewport are actively rendered. The SVG-based rendering provides hardware-accelerated performance.
+  </Accordion>
+  
+  <Accordion title="Real-time Throttling">
+    Updates are throttled to 16ms (60fps) to balance responsiveness with network efficiency, configured in `liveblocks.config.ts:11-12`.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Collaboration" icon="users" href="/features/collaboration">
+    See how multiple users work together on the canvas
+  </Card>
+  
+  <Card title="Boards" icon="layout-grid" href="/features/boards">
+    Learn about creating and managing boards
+  </Card>
+</CardGroup>

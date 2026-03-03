@@ -1,0 +1,137 @@
+---
+title: 'useDeleteLayers'
+description: 'A Liveblocks mutation hook for deleting selected layers from the canvas'
+---
+
+## Overview
+
+The `useDeleteLayers` hook is a specialized Liveblocks mutation that handles the deletion of currently selected layers from the collaborative canvas. It removes layers from both the layers map and the layer IDs list, then clears the selection state.
+
+## Usage
+
+```tsx
+import { useDeleteLayers } from '@/hooks/use-delete-layer';
+
+function CanvasToolbar() {
+  const deleteLayers = useDeleteLayers();
+
+  return (
+    <button onClick={deleteLayers}>
+      Delete Selected
+    </button>
+  );
+}
+```
+
+## Parameters
+
+This hook does not accept any parameters.
+
+## Return Value
+
+<ResponseField name="deleteLayers" type="() => void">
+  A mutation function that deletes all currently selected layers from the canvas storage and clears the selection. This operation is added to the undo/redo history.
+</ResponseField>
+
+## How It Works
+
+1. **Gets Current Selection**: Reads the current user's selected layer IDs from their presence state
+2. **Removes Layers**: Iterates through selected layer IDs and:
+   - Deletes each layer from the `layers` LiveMap
+   - Finds and removes the layer ID from the `layerIds` LiveList
+3. **Clears Selection**: Sets the user's selection to an empty array
+4. **History Tracking**: Adds the operation to history for undo/redo support
+
+## Real-World Examples
+
+### Delete Button in Selection Tools
+
+```tsx
+// source/app/board/[boardId]/_components/selection-tools.tsx:20
+import { useDeleteLayers } from '@/hooks/use-delete-layer';
+import { Button } from '@/components/ui/button';
+import { Hint } from '@/components/hint';
+import { LuTrash2 } from 'react-icons/lu';
+
+export const SelectionTools = ({ camera, setLastUsedColor }) => {
+  const deleteLayers = useDeleteLayers();
+  const selectionBounds = useSelectionBounds();
+
+  if (!selectionBounds) return null;
+
+  return (
+    <div className='absolute p-3 rounded-xl bg-white shadow-sm border'>
+      {/* Other tools */}
+      <div className='flex items-center pl-2 ml-2 border-neutral-200 border-l'>
+        <Hint label='Delete'>
+          <Button variant='board' size='icon' onClick={deleteLayers}>
+            <LuTrash2 className='h-5 w-5' />
+          </Button>
+        </Hint>
+      </div>
+    </div>
+  );
+};
+```
+
+### Keyboard Shortcut Handler
+
+```tsx
+// source/app/board/[boardId]/_components/canvas.tsx:304
+import { useDeleteLayers } from '@/hooks/use-delete-layer';
+
+function Canvas() {
+  const deleteLayers = useDeleteLayers();
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      switch (e.key) {
+        case 'Backspace':
+        case 'Delete':
+          deleteLayers();
+          break;
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [deleteLayers]);
+
+  return <canvas />;
+}
+```
+
+## Type Definitions
+
+The hook relies on Liveblocks storage types:
+
+```typescript
+type Storage = {
+  layers: LiveMap<string, LiveObject<Layer>>;
+  layerIds: LiveList<string>;
+};
+
+type Presence = {
+  selection: string[];
+  cursor: { x: number; y: number } | null;
+};
+```
+
+## Dependencies
+
+The mutation re-runs when the `selection` array changes, ensuring it always operates on the current selection.
+
+<Warning>
+  This operation is destructive and will permanently delete the selected layers from the shared canvas storage. However, it is added to the undo/redo history, allowing users to recover deleted layers using undo.
+</Warning>
+
+<Note>
+  The hook uses `useSelf` to read the current user's selection and `useMutation` from Liveblocks to create a collaborative mutation that syncs across all connected clients.
+</Note>
+
+## Best Practices
+
+- Bind this hook to common keyboard shortcuts (Delete, Backspace) for better UX
+- Only show delete UI when there are selected layers (`selection.length > 0`)
+- Combine with confirmation dialogs for important or bulk deletions
+- The operation includes `{ addToHistory: true }` to support undo/redo functionality

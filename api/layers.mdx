@@ -1,0 +1,343 @@
+---
+title: "Layers"
+description: "Layer types and interfaces for rendering canvas elements in TaskForge Studio"
+---
+
+## LayerType Enum
+
+Defines the different types of visual elements that can be rendered on the canvas.
+
+```typescript
+enum LayerType {
+  Rectangle,
+  Ellipse,
+  Path,
+  Text,
+  Note,
+}
+```
+
+<ParamField path="Rectangle" type="0">
+  Rectangular shape layer
+</ParamField>
+
+<ParamField path="Ellipse" type="1">
+  Elliptical/circular shape layer
+</ParamField>
+
+<ParamField path="Path" type="2">
+  Free-form drawing path layer created with pencil tool
+</ParamField>
+
+<ParamField path="Text" type="3">
+  Text content layer
+</ParamField>
+
+<ParamField path="Note" type="4">
+  Sticky note layer
+</ParamField>
+
+## Layer Types
+
+Each layer type shares common properties for positioning and appearance, with specific properties for specialized functionality.
+
+### RectangleLayer
+
+Represents a rectangular shape on the canvas.
+
+```typescript
+type RectangleLayer = {
+  type: LayerType.Rectangle;
+  x: number;
+  y: number;
+  height: number;
+  width: number;
+  fill: Color;
+  value?: string;
+};
+```
+
+<ResponseField name="type" type="LayerType.Rectangle" required>
+  Layer type discriminator
+</ResponseField>
+
+<ResponseField name="x" type="number" required>
+  X coordinate of the layer's top-left corner
+</ResponseField>
+
+<ResponseField name="y" type="number" required>
+  Y coordinate of the layer's top-left corner
+</ResponseField>
+
+<ResponseField name="height" type="number" required>
+  Height of the rectangle in pixels
+</ResponseField>
+
+<ResponseField name="width" type="number" required>
+  Width of the rectangle in pixels
+</ResponseField>
+
+<ResponseField name="fill" type="Color">
+  Fill color of the rectangle. See [Color type](/api/colors#color-type).
+</ResponseField>
+
+<ResponseField name="value" type="string">
+  Optional text content associated with the layer
+</ResponseField>
+
+### EllipseLayer
+
+Represents an elliptical or circular shape on the canvas.
+
+```typescript
+type EllipseLayer = {
+  type: LayerType.Ellipse;
+  x: number;
+  y: number;
+  height: number;
+  width: number;
+  fill: Color;
+  value?: string;
+};
+```
+
+<ResponseField name="type" type="LayerType.Ellipse" required>
+  Layer type discriminator
+</ResponseField>
+
+<ResponseField name="x" type="number" required>
+  X coordinate of the bounding box's top-left corner
+</ResponseField>
+
+<ResponseField name="y" type="number" required>
+  Y coordinate of the bounding box's top-left corner
+</ResponseField>
+
+<ResponseField name="height" type="number" required>
+  Height of the bounding box in pixels
+</ResponseField>
+
+<ResponseField name="width" type="number" required>
+  Width of the bounding box in pixels
+</ResponseField>
+
+<ResponseField name="fill" type="Color">
+  Fill color of the ellipse. See [Color type](/api/colors#color-type).
+</ResponseField>
+
+<ResponseField name="value" type="string">
+  Optional text content associated with the layer
+</ResponseField>
+
+### PathLayer
+
+Represents a free-form drawing path created with the pencil tool.
+
+```typescript
+type PathLayer = {
+  type: LayerType.Path;
+  x: number;
+  y: number;
+  height: number;
+  width: number;
+  fill: Color;
+  points: number[][];
+  value?: string;
+};
+```
+
+<ResponseField name="type" type="LayerType.Path" required>
+  Layer type discriminator
+</ResponseField>
+
+<ResponseField name="x" type="number" required>
+  X coordinate of the bounding box's top-left corner
+</ResponseField>
+
+<ResponseField name="y" type="number" required>
+  Y coordinate of the bounding box's top-left corner
+</ResponseField>
+
+<ResponseField name="height" type="number" required>
+  Height of the bounding box in pixels
+</ResponseField>
+
+<ResponseField name="width" type="number" required>
+  Width of the bounding box in pixels
+</ResponseField>
+
+<ResponseField name="fill" type="Color">
+  Stroke color of the path. See [Color type](/api/colors#color-type).
+</ResponseField>
+
+<ResponseField name="points" type="number[][]" required>
+  Array of [x, y] coordinate pairs representing the path points
+</ResponseField>
+
+<ResponseField name="value" type="string">
+  Optional text content associated with the layer
+</ResponseField>
+
+### TextLayer
+
+Represents a text content layer on the canvas.
+
+```typescript
+type TextLayer = {
+  type: LayerType.Text;
+  x: number;
+  y: number;
+  height: number;
+  width: number;
+  fill: Color;
+  value?: string;
+};
+```
+
+<ResponseField name="type" type="LayerType.Text" required>
+  Layer type discriminator
+</ResponseField>
+
+<ResponseField name="x" type="number" required>
+  X coordinate of the text box's top-left corner
+</ResponseField>
+
+<ResponseField name="y" type="number" required>
+  Y coordinate of the text box's top-left corner
+</ResponseField>
+
+<ResponseField name="height" type="number" required>
+  Height of the text box in pixels
+</ResponseField>
+
+<ResponseField name="width" type="number" required>
+  Width of the text box in pixels
+</ResponseField>
+
+<ResponseField name="fill" type="Color">
+  Text color. See [Color type](/api/colors#color-type).
+</ResponseField>
+
+<ResponseField name="value" type="string">
+  The text content to display
+</ResponseField>
+
+### NoteLayer
+
+Represents a sticky note layer on the canvas.
+
+```typescript
+type NoteLayer = {
+  type: LayerType.Note;
+  x: number;
+  y: number;
+  height: number;
+  width: number;
+  fill: Color;
+  value?: string;
+};
+```
+
+<ResponseField name="type" type="LayerType.Note" required>
+  Layer type discriminator
+</ResponseField>
+
+<ResponseField name="x" type="number" required>
+  X coordinate of the note's top-left corner
+</ResponseField>
+
+<ResponseField name="y" type="number" required>
+  Y coordinate of the note's top-left corner
+</ResponseField>
+
+<ResponseField name="height" type="number" required>
+  Height of the note in pixels
+</ResponseField>
+
+<ResponseField name="width" type="number" required>
+  Width of the note in pixels
+</ResponseField>
+
+<ResponseField name="fill" type="Color">
+  Background color of the note. See [Color type](/api/colors#color-type).
+</ResponseField>
+
+<ResponseField name="value" type="string">
+  The note text content
+</ResponseField>
+
+## Layer Union Type
+
+The `Layer` type is a discriminated union of all layer types, enabling type-safe layer handling.
+
+```typescript
+type Layer =
+  | RectangleLayer
+  | EllipseLayer
+  | PathLayer
+  | TextLayer
+  | NoteLayer;
+```
+
+## Usage Examples
+
+### Creating a Layer
+
+```typescript
+import { LayerType, Color } from '@/types/canvas';
+import { LiveObject } from '@liveblocks/client';
+
+const lastUsedColor: Color = { r: 255, g: 0, b: 0 };
+const position = { x: 100, y: 150 };
+
+const layer = new LiveObject({
+  type: LayerType.Rectangle,
+  x: position.x,
+  y: position.y,
+  height: 100,
+  width: 100,
+  fill: lastUsedColor,
+});
+```
+
+### Type Guards
+
+```typescript
+import { Layer, LayerType } from '@/types/canvas';
+
+function isTextLayer(layer: Layer): layer is TextLayer {
+  return layer.type === LayerType.Text;
+}
+
+function isPathLayer(layer: Layer): layer is PathLayer {
+  return layer.type === LayerType.Path;
+}
+```
+
+### Rendering Layers
+
+```typescript
+import { Layer } from '@/types/canvas';
+
+function renderLayer(layer: Layer) {
+  switch (layer.type) {
+    case LayerType.Rectangle:
+      return <rect
+        x={layer.x}
+        y={layer.y}
+        width={layer.width}
+        height={layer.height}
+        fill={`rgb(${layer.fill.r},${layer.fill.g},${layer.fill.b})`}
+      />;
+    case LayerType.Ellipse:
+      return <ellipse
+        cx={layer.x + layer.width / 2}
+        cy={layer.y + layer.height / 2}
+        rx={layer.width / 2}
+        ry={layer.height / 2}
+        fill={`rgb(${layer.fill.r},${layer.fill.g},${layer.fill.b})`}
+      />;
+    // ... other cases
+  }
+}
+```

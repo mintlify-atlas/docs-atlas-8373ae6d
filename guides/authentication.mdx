@@ -1,0 +1,193 @@
+---
+title: Authentication Guide
+description: Learn how to implement authentication in TaskForge Studio using Clerk and Convex
+---
+
+TaskForge Studio uses [Clerk](https://clerk.com) for authentication and integrates it with [Convex](https://convex.dev) for backend operations. This guide walks you through the authentication architecture and implementation.
+
+## Overview
+
+The authentication system consists of three main components:
+
+1. **Clerk** - Handles user authentication and session management
+2. **Convex** - Provides authenticated backend operations
+3. **Middleware** - Protects routes and manages authentication state
+
+## Authentication Flow
+
+<Steps>
+  <Step title="Configure Clerk with Convex">
+    Set up the Convex auth configuration to work with Clerk. This configuration is located in `convex/auth.config.ts`:
+
+    ```typescript convex/auth.config.ts
+    export default {
+      providers: [
+        {
+          domain: 'https://simple-robin-9.clerk.accounts.dev',
+          applicationID: 'convex',
+        },
+      ],
+    };
+    ```
+
+    <Info>
+      Replace the domain with your Clerk instance URL. The `applicationID` should match your Convex configuration.
+    </Info>
+  </Step>
+
+  <Step title="Set up the Convex Client Provider">
+    Wrap your application with the authentication providers in `providers/convex-client-provider.tsx`:
+
+    ```typescript providers/convex-client-provider.tsx
+    'use client';
+
+    import { ClerkProvider, useAuth } from '@clerk/nextjs';
+    import { ConvexProviderWithClerk } from 'convex/react-clerk';
+    import { AuthLoading, Authenticated, ConvexReactClient } from 'convex/react';
+    import { Loading } from '@/components/auth/loading';
+
+    const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL!;
+    const convex = new ConvexReactClient(convexUrl);
+
+    export const ConvexClientProvider = ({ children }: { children: React.ReactNode }) => {
+      return (
+        <ClerkProvider>
+          <ConvexProviderWithClerk useAuth={useAuth} client={convex}>
+            <Authenticated>{children}</Authenticated>
+            <AuthLoading>
+              <Loading />
+            </AuthLoading>
+          </ConvexProviderWithClerk>
+        </ClerkProvider>
+      );
+    };
+    ```
+
+    This setup:
+    - Wraps the app with `ClerkProvider` for authentication
+    - Connects Clerk with Convex using `ConvexProviderWithClerk`
+    - Shows content only when authenticated
+    - Displays a loading state during authentication
+  </Step>
+
+  <Step title="Add the provider to your layout">
+    Include the `ConvexClientProvider` in your root layout at `app/layout.tsx`:
+
+    ```typescript app/layout.tsx
+    import { ConvexClientProvider } from '@/providers/convex-client-provider';
+    import { Suspense } from 'react';
+    import { Loading } from '@/components/auth/loading';
+
+    export default function RootLayout({ children }: { children: React.ReactNode }) {
+      return (
+        <html lang='en'>
+          <body>
+            <Suspense fallback={<Loading />}>
+              <ConvexClientProvider>
+                {children}
+              </ConvexClientProvider>
+            </Suspense>
+          </body>
+        </html>
+      );
+    }
+    ```
+  </Step>
+
+  <Step title="Configure route protection middleware">
+    Protect your routes using Clerk middleware in `middleware.ts`:
+
+    ```typescript middleware.ts
+    import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+
+    const isProtectedRoute = createRouteMatcher(['/']);
+
+    export default clerkMiddleware((auth, req) => {
+      if (isProtectedRoute(req)) auth().protect();
+    });
+
+    export const config = {
+      matcher: ['/((?!.*\\..*|_next).*)', '/', '/(api|trpc)(.*)'],
+    };
+    ```
+
+    <Warning>
+      The root route `/` is protected by default. Add additional routes to the `createRouteMatcher` array as needed.
+    </Warning>
+  </Step>
+</Steps>
+
+## Environment Variables
+
+Ensure you have the following environment variables configured:
+
+<CodeGroup>
+```bash .env.local
+# Clerk
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+
+# Convex
+NEXT_PUBLIC_CONVEX_URL=https://your-deployment.convex.cloud
+CONVEX_DEPLOYMENT=your-deployment
+```
+</CodeGroup>
+
+## Server-Side Authentication
+
+To authenticate API routes or server actions, use Clerk's server-side utilities:
+
+```typescript app/api/example/route.ts
+import { auth, currentUser } from '@clerk/nextjs/server';
+
+export async function GET() {
+  const { userId, orgId } = await auth();
+  const user = await currentUser();
+
+  if (!userId) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  // Your authenticated logic here
+  return Response.json({ userId, orgId });
+}
+```
+
+## Authentication States
+
+The ConvexClientProvider handles three authentication states:
+
+| State | Component | Description |
+|-------|-----------|-------------|
+| **Authenticated** | `<Authenticated>` | User is logged in and verified |
+| **Loading** | `<AuthLoading>` | Checking authentication status |
+| **Unauthenticated** | Default | User is redirected to sign-in |
+
+## Best Practices
+
+<Tip>
+  **Organization-based access**: TaskForge Studio uses Clerk's organization feature to manage board access. Always verify `orgId` matches the resource being accessed.
+</Tip>
+
+<Note>
+  **Client vs Server**: Use `useAuth()` hook on the client and `auth()` function on the server for accessing authentication state.
+</Note>
+
+## Troubleshooting
+
+### Users are not being authenticated
+
+1. Verify your Clerk environment variables are correct
+2. Check that the Clerk domain in `convex/auth.config.ts` matches your Clerk instance
+3. Ensure the middleware matcher includes your protected routes
+
+### Convex queries fail with authentication errors
+
+1. Confirm `NEXT_PUBLIC_CONVEX_URL` is set correctly
+2. Verify the Convex deployment is linked to your Clerk application
+3. Check that `ConvexProviderWithClerk` is wrapping your application properly
+
+## Next Steps
+
+- Learn about [Real-time Sync](/guides/real-time-sync) to add collaborative features
+- Explore [Customization](/guides/customization) to style your authentication UI

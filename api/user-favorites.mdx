@@ -1,0 +1,179 @@
+---
+title: User Favorites
+description: API reference for managing user favorite boards in TaskForge Studio
+---
+
+The User Favorites API provides mutations for adding and removing boards from a user's favorites list.
+
+## favorite
+
+Adds a board to the authenticated user's favorites list.
+
+<ParamField path="id" type="Id<'boards'>" required>
+  The ID of the board to favorite
+</ParamField>
+
+<ParamField path="orgId" type="string" required>
+  The organization ID that the board belongs to
+</ParamField>
+
+### Returns
+
+Returns `void` on successful addition to favorites.
+
+### Example
+
+```typescript
+await convex.mutation(api.board.favorite, {
+  id: boardId,
+  orgId: "org_2abc123def456"
+});
+```
+
+### Behavior
+
+- Verifies that the board exists before adding to favorites
+- Creates a `userFavorites` entry linking the user, board, and organization
+- Uses the `by_user_board_org` index to check for existing favorites
+
+### Errors
+
+- **Unauthorized**: Thrown when the user is not authenticated
+- **Board not found**: Thrown when the specified board ID doesn't exist
+- **Board already in favorite list**: Thrown when the board is already favorited by the user
+
+---
+
+## unFavorite
+
+Removes a board from the authenticated user's favorites list.
+
+<ParamField path="id" type="Id<'boards'>" required>
+  The ID of the board to unfavorite
+</ParamField>
+
+### Returns
+
+Returns `void` on successful removal from favorites.
+
+### Example
+
+```typescript
+await convex.mutation(api.board.unFavorite, {
+  id: boardId
+});
+```
+
+### Behavior
+
+- Verifies that the board exists before attempting to unfavorite
+- Removes the `userFavorites` entry for the user and board
+- Uses the `by_user_board_org` index to locate the favorite entry
+
+### Errors
+
+- **Unauthorized**: Thrown when the user is not authenticated
+- **Board not found**: Thrown when the specified board ID doesn't exist
+- **Board not in favorite list**: Thrown when the board is not currently favorited by the user
+
+---
+
+## Querying Favorites
+
+To retrieve a user's favorited boards, use the `boards.get` query with the `favorites` parameter.
+
+### Example
+
+```typescript
+const favoriteBoards = await convex.query(api.boards.get, {
+  orgId: "org_2abc123def456",
+  favorites: "true"
+});
+```
+
+### Returns
+
+<ResponseField name="boards" type="Board[]">
+  Array of board objects with `isFavorite: true`
+</ResponseField>
+
+### Response Schema
+
+<Expandable title="Board Object with Favorite Status">
+  <ResponseField name="_id" type="Id<'boards'>">
+    Unique board identifier
+  </ResponseField>
+  
+  <ResponseField name="title" type="string">
+    Board title
+  </ResponseField>
+  
+  <ResponseField name="orgId" type="string">
+    Organization ID
+  </ResponseField>
+  
+  <ResponseField name="authorId" type="string">
+    User ID of the board creator
+  </ResponseField>
+  
+  <ResponseField name="authorName" type="string">
+    Name of the board creator
+  </ResponseField>
+  
+  <ResponseField name="imageUrl" type="string">
+    Board's placeholder image URL
+  </ResponseField>
+  
+  <ResponseField name="isFavorite" type="boolean">
+    Always `true` when querying with the favorites filter
+  </ResponseField>
+  
+  <ResponseField name="_creationTime" type="number">
+    Timestamp when the board was created
+  </ResponseField>
+</Expandable>
+
+### Behavior
+
+- Results are ordered by most recently favorited (descending order)
+- Uses the `by_user_org` index for efficient querying
+- Only returns boards that exist and are favorited by the authenticated user
+
+---
+
+## Schema
+
+The `userFavorites` table stores the relationship between users and their favorite boards.
+
+### UserFavorite Object
+
+<Expandable title="UserFavorite Schema">
+  <ResponseField name="_id" type="Id<'userFavorites'>">
+    Unique identifier for the favorite entry
+  </ResponseField>
+  
+  <ResponseField name="userId" type="string">
+    The ID of the user who favorited the board
+  </ResponseField>
+  
+  <ResponseField name="boardId" type="Id<'boards'>">
+    The ID of the favorited board
+  </ResponseField>
+  
+  <ResponseField name="orgId" type="string">
+    The organization ID for scoping favorites
+  </ResponseField>
+  
+  <ResponseField name="_creationTime" type="number">
+    Timestamp when the favorite was created
+  </ResponseField>
+</Expandable>
+
+### Indexes
+
+The `userFavorites` table uses the following indexes for efficient queries:
+
+- `by_board`: Index on `boardId`
+- `by_user_org`: Composite index on `userId` and `orgId`
+- `by_user_board`: Composite index on `userId` and `boardId`
+- `by_user_board_org`: Composite index on `userId`, `boardId`, and `orgId`

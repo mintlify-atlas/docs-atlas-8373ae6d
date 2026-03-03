@@ -1,0 +1,413 @@
+---
+title: Real-time Collaboration
+description: Work together seamlessly with live cursors, presence awareness, and synchronized canvas updates
+---
+
+TaskForge Studio is built for real-time collaboration, allowing multiple team members to work on the same board simultaneously. Every action is synchronized instantly across all connected users.
+
+## Collaboration Infrastructure
+
+Real-time features are powered by Liveblocks, configured in `liveblocks.config.ts`:
+
+```typescript
+const client = createClient({
+  throttle: 16,
+  authEndpoint: '/api/liveblocks-auth',
+  // ... resolver functions
+});
+```
+
+### Update Throttling
+
+Updates are throttled to 16 milliseconds (60 frames per second) to balance real-time responsiveness with network efficiency. This ensures smooth collaboration without overwhelming the network.
+
+<Note>
+The 16ms throttle provides 60 updates per second - imperceptible to users while maintaining excellent performance.
+</Note>
+
+## Presence System
+
+The presence system tracks what each user is doing in real-time.
+
+### User Presence Data
+
+Each connected user broadcasts their presence, defined in `liveblocks.config.ts:59-63`:
+
+```typescript
+type Presence = {
+  cursor: { x: number; y: number } | null;
+  selection: string[];
+};
+```
+
+| Field | Description |
+|-------|-------------|
+| `cursor` | Current mouse position on the canvas (null when cursor leaves) |
+| `selection` | Array of layer IDs currently selected by this user |
+
+### Live Cursors
+
+See where other users are pointing and working on the canvas in real-time.
+
+<Steps>
+  <Step title="Cursor tracking">
+    As you move your mouse, your cursor position is broadcast to all other users every 16ms.
+  </Step>
+  
+  <Step title="Color-coded indicators">
+    Each user's cursor is displayed with a unique color for easy identification.
+  </Step>
+  
+  <Step title="Name labels">
+    Cursor labels show the user's name, making it clear who is working where.
+  </Step>
+</Steps>
+
+Implementation in `app/board/[boardId]/_components/canvas.tsx:215-238`:
+
+```typescript
+const onPointerMove = useMutation(
+  ({ setMyPresence }, e: React.PointerEvent) => {
+    e.preventDefault();
+
+    const current = pointerEventToCanvasPoint(e, camera);
+
+    if (canvasState.mode === CanvasMode.Pressing) {
+      startMultiSelection(current, canvasState.origin);
+    } else if (canvasState.mode === CanvasMode.SelectionNet) {
+      updateSelectionNet(current, canvasState.origin);
+    } else if (canvasState.mode === CanvasMode.Translating) {
+      translateSelectedLayers(current);
+    } else if (canvasState.mode === CanvasMode.Resizing) {
+      resizeSelectedLayer(current);
+    }
+
+    setMyPresence({ cursor: current });
+  },
+  [camera, canvasState, resizeSelectedLayer, translateSelectedLayers]
+);
+```
+
+<Note>
+Cursors are hidden when users move their mouse outside the canvas to reduce visual clutter.
+</Note>
+
+## Participants Panel
+
+The participants panel shows all active users on the current board.
+
+### Participant Display
+
+Located in the top-right corner of the canvas, the panel displays:
+
+- User avatars with colored borders matching their cursor color
+- Your own avatar labeled "(You)"
+- Up to 2 other users shown directly
+- A "+N more" indicator when more than 2 others are present
+
+Implementation in `app/board/[boardId]/_components/participants.tsx:10-48`:
+
+```typescript
+export const Participants = () => {
+  const users = useOthers();
+  const currentUser = useSelf();
+  const hasMoreUsers = users.length > MAX_SHOWN_OTHER_USERS;
+
+  return (
+    <div className='absolute h-12 top-2 right-2 bg-white rounded-md p-3 flex items-center shadow-md'>
+      <div className='flex gap-x-2'>
+        {users.slice(0, MAX_SHOWN_OTHER_USERS).map(({ connectionId, info }) => {
+          return (
+            <UserAvatar
+              name={info?.name}
+              key={connectionId}
+              src={info?.picture}
+              fallback={info?.name?.[0] || 'T'}
+              borderColor={connectionToColor(connectionId)}
+            />
+          );
+        })}
+
+        {currentUser && (
+          <UserAvatar
+            src={currentUser.info?.picture}
+            name={`${currentUser.info?.name} (You)`}
+            fallback={currentUser.info?.name?.[0]}
+            borderColor={connectionToColor(currentUser.connectionId)}
+          />
+        )}
+
+        {hasMoreUsers && (
+          <UserAvatar
+            name={`${users.length - MAX_SHOWN_OTHER_USERS} more`}
+            fallback={`+${users.length - MAX_SHOWN_OTHER_USERS}`}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+```
+
+### User Metadata
+
+User information is provided through authentication and includes:
+
+```typescript
+type UserMeta = {
+  id?: string;
+  info?: {
+    name?: string;
+    picture?: string;
+  };
+};
+```
+
+## Shared Storage
+
+All canvas data is synchronized through shared storage that persists even after users leave.
+
+### Storage Structure
+
+Defined in `liveblocks.config.ts:69-72`:
+
+```typescript
+type Storage = {
+  layers: LiveMap<string, LiveObject<Layer>>;
+  layerIds: LiveList<string>;
+};
+```
+
+<CardGroup cols={2}>
+  <Card title="layers" icon="layer-group">
+    A LiveMap containing all layer objects indexed by their unique ID. Each layer is a LiveObject that synchronizes property changes.
+  </Card>
+  
+  <Card title="layerIds" icon="list">
+    A LiveList maintaining the z-order of layers. Position in this list determines which layers appear on top.
+  </Card>
+</CardGroup>
+
+### Live Objects
+
+Layers are stored as LiveObjects, enabling granular synchronization:
+
+```typescript
+const layer = new LiveObject({
+  type: layerType,
+  x: position.x,
+  y: position.y,
+  height: 100,
+  width: 100,
+  fill: lastUsedColor,
+});
+```
+
+When any user updates a layer property:
+
+1. The change is immediately applied locally
+2. The update is broadcast to all connected users
+3. Other users' canvases update automatically
+4. Conflicts are resolved using Liveblocks' CRDT algorithms
+
+## Selection Awareness
+
+See what objects other users have selected in real-time.
+
+### Visual Indicators
+
+When another user selects an object:
+
+- The object shows a colored border matching the user's cursor color
+- Multiple users can select the same object simultaneously
+- Each user's selection is independently visible
+
+Implementation in `app/board/[boardId]/_components/canvas.tsx:291-302`:
+
+```typescript
+const layerIdsToColorSelection = useMemo(() => {
+  const layerIdsToColorSelection: Record<string, string> = {};
+  for (const user of selections) {
+    const [connectionId, selection] = user;
+
+    for (const layerId of selection) {
+      layerIdsToColorSelection[layerId] = connectionToColor(connectionId);
+    }
+  }
+
+  return layerIdsToColorSelection;
+}, [selections]);
+```
+
+### Selection Conflicts
+
+TaskForge Studio handles concurrent selections gracefully:
+
+- Users can select and modify the same object simultaneously
+- Changes are merged using conflict-free replicated data types (CRDTs)
+- Last-write-wins for simple property updates
+- Visual feedback shows which user's selection takes priority
+
+<Warning>
+While the system handles conflicts automatically, be aware that simultaneous edits to the same object may produce unexpected results. Coordinate with team members on who modifies specific objects.
+</Warning>
+
+## Real-time Updates
+
+All canvas operations are synchronized in real-time using Liveblocks mutations.
+
+### Mutation Pattern
+
+Operations use the `useMutation` hook for real-time updates:
+
+```typescript
+const translateSelectedLayers = useMutation(
+  ({ storage, self }, point: Point) => {
+    const liveLayers = storage.get('layers');
+
+    for (const id of self.presence.selection) {
+      const layer = liveLayers.get(id);
+      if (layer) {
+        layer.update({
+          x: layer.get('x') + offset.x,
+          y: layer.get('y') + offset.y,
+        });
+      }
+    }
+  },
+  [canvasState]
+);
+```
+
+This pattern ensures:
+
+1. **Immediate local updates** - Changes appear instantly for the user
+2. **Automatic broadcasting** - Updates are sent to all connected users
+3. **Optimistic UI** - No waiting for server confirmation
+4. **Conflict resolution** - CRDTs handle concurrent modifications
+
+### Synchronized Operations
+
+These operations are synchronized in real-time:
+
+- Creating layers
+- Moving objects
+- Resizing objects
+- Changing colors
+- Deleting layers
+- Reordering layers (z-index)
+- Selection changes
+- Cursor movements
+
+## History Synchronization
+
+Undo/redo history is synchronized across all users on the same board.
+
+### Collaborative History
+
+The history system tracks operations with authorship:
+
+- Each user has independent undo/redo stacks
+- You can undo your own actions
+- You cannot undo other users' actions
+- History includes operations from all users
+
+Operations are added to history with the `addToHistory` flag:
+
+```typescript
+setMyPresence({ selection: [layerId] }, { addToHistory: true });
+```
+
+### History Pausing
+
+During active operations, history is paused to prevent cluttering:
+
+```typescript
+const onResizeHandlePointerDown = useCallback(
+  (corner: Side, initialBounds: XYWH) => {
+    history.pause();
+    setCavnasState({
+      mode: CanvasMode.Resizing,
+      initialBounds,
+      corner,
+    });
+  },
+  [history]
+);
+```
+
+History resumes when the operation completes, creating a single undo step for the entire drag operation.
+
+## Connection Management
+
+### Authentication
+
+Users are authenticated through the `/api/liveblocks-auth` endpoint before joining a board room. This ensures:
+
+- Only authorized organization members can access boards
+- User identity is verified
+- Presence information is accurate
+
+### Connection States
+
+Liveblocks manages connection states automatically:
+
+- **Connecting** - Initial connection to the room
+- **Connected** - Active real-time synchronization
+- **Disconnected** - Temporary network issue
+- **Reconnecting** - Attempting to restore connection
+
+<Note>
+If you lose connection, changes are queued locally and synchronized automatically when the connection is restored.
+</Note>
+
+## Collaboration Best Practices
+
+<AccordionGroup>
+  <Accordion title="Communicate with your team">
+    While TaskForge Studio shows who's working where, verbal or text communication helps coordinate complex edits and prevents conflicts.
+  </Accordion>
+  
+  <Accordion title="Watch for selection indicators">
+    Before modifying an object, check if another user has it selected (indicated by colored borders). This helps avoid edit conflicts.
+  </Accordion>
+  
+  <Accordion title="Use different canvas areas">
+    When multiple users are working simultaneously, spread out across the canvas to minimize selection conflicts and make collaboration smoother.
+  </Accordion>
+  
+  <Accordion title="Be mindful of undo operations">
+    Your undo only affects your changes. If something unexpected happens, check if another user is working on the same area before undoing.
+  </Accordion>
+</AccordionGroup>
+
+## Performance at Scale
+
+### Optimization Strategies
+
+TaskForge Studio is optimized for collaborative performance:
+
+| Feature | Implementation |
+|---------|----------------|
+| Update throttling | 16ms (60fps) prevents network flooding |
+| Selective rendering | Only visible layers are actively rendered |
+| Efficient data structures | LiveMap and LiveList minimize sync overhead |
+| Connection pooling | Shared WebSocket connection for all updates |
+
+### Scalability Limits
+
+- **100 layers per board** - Ensures smooth performance with multiple users
+- **Unlimited concurrent users** - No hard limit, but performance is optimal with 2-10 users
+- **No throttling on reads** - Viewing updates is always instant
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Organizations" icon="building" href="/features/organizations">
+    Learn about team organization and access control
+  </Card>
+  
+  <Card title="Canvas" icon="paintbrush" href="/features/canvas">
+    Explore canvas drawing tools and features
+  </Card>
+</CardGroup>

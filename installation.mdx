@@ -1,0 +1,557 @@
+---
+title: "Installation & Setup"
+description: "Set up TaskForge Studio for local development or deploy to production"
+---
+
+# Installation & Setup
+
+This guide covers setting up TaskForge Studio for local development and deploying to production. TaskForge Studio is built with Next.js 14 and requires several third-party services for full functionality.
+
+## Prerequisites
+
+Before you begin, ensure you have:
+
+- **Node.js**: Version 20 or higher
+- **npm, yarn, pnpm, or bun**: Package manager of your choice
+- **Git**: For cloning the repository
+- **Clerk Account**: For authentication ([clerk.com](https://clerk.com))
+- **Convex Account**: For backend database ([convex.dev](https://convex.dev))
+- **Liveblocks Account**: For real-time collaboration ([liveblocks.io](https://liveblocks.io))
+
+<Note>
+  TaskForge Studio integrates three essential services:
+  - **Clerk**: User authentication and organization management
+  - **Convex**: Real-time backend database for board storage
+  - **Liveblocks**: Real-time collaboration and presence
+</Note>
+
+## Local Development Setup
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the TaskForge Studio repository to your local machine:
+    
+    ```bash
+    git clone <repository-url>
+    cd college-project
+    ```
+  </Step>
+  
+  <Step title="Install Dependencies">
+    Install all required packages using your preferred package manager:
+    
+    <CodeGroup>
+    ```bash npm
+    npm install
+    ```
+    
+    ```bash yarn
+    yarn install
+    ```
+    
+    ```bash pnpm
+    pnpm install
+    ```
+    
+    ```bash bun
+    bun install
+    ```
+    </CodeGroup>
+    
+    This will install all dependencies from `package.json`:
+    
+    ```json
+    {
+      "dependencies": {
+        "@clerk/nextjs": "^5.0.5",
+        "@liveblocks/client": "^1.12.0",
+        "@liveblocks/react": "^1.12.0",
+        "convex": "^1.11.2",
+        "next": "14.2.3",
+        "react": "^18",
+        "@radix-ui/react-dialog": "^1.0.5",
+        "tailwindcss": "^3.4.1"
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Configure Environment Variables">
+    Create a `.env.local` file in the project root with the following variables:
+    
+    ```bash .env.local
+    # Clerk Authentication
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+    CLERK_SECRET_KEY=sk_test_...
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+    
+    # Convex Backend
+    NEXT_PUBLIC_CONVEX_URL=https://your-project.convex.cloud
+    CONVEX_DEPLOYMENT=your-deployment-name
+    
+    # Liveblocks Real-time
+    LIVEBLOCKS_SECRET_KEY=sk_...
+    NEXT_PUBLIC_LIVEBLOCKS_PUBLIC_KEY=pk_...
+    ```
+    
+    <Warning>
+      Never commit `.env.local` to version control. Add it to `.gitignore` to keep your secrets safe.
+    </Warning>
+  </Step>
+  
+  <Step title="Set Up Clerk Authentication">
+    1. Go to [clerk.com](https://clerk.com) and create an account
+    2. Create a new application
+    3. Enable **Organizations** feature in the Clerk dashboard
+    4. Copy your publishable key and secret key
+    5. Configure allowed redirect URLs:
+       - `http://localhost:3000`
+       - Your production domain
+    
+    The Clerk integration handles:
+    - User sign-up and sign-in
+    - Organization creation and management
+    - User profiles and avatars
+    - Session management
+    
+    ```typescript
+    // Clerk is used throughout the app, e.g., in app/(dashboard)/page.tsx:15
+    import { useOrganization } from '@clerk/nextjs';
+    
+    const { organization } = useOrganization();
+    // organization.id is used to filter boards
+    ```
+  </Step>
+  
+  <Step title="Set Up Convex Database">
+    1. Install Convex CLI globally:
+       ```bash
+       npm install -g convex
+       ```
+    
+    2. Initialize Convex in your project:
+       ```bash
+       npx convex dev
+       ```
+    
+    3. Follow the prompts to:
+       - Log in to your Convex account
+       - Create a new project
+       - Link to your local development
+    
+    4. The Convex URL will be automatically added to your `.env.local`
+    
+    The Convex schema includes:
+    - **boards**: Board metadata (title, author, organization, image)
+    - **userFavorites**: User's favorited boards
+    
+    ```typescript
+    // Board operations from convex/board.ts
+    export const create = mutation({
+      args: { orgId: v.string(), title: v.string() },
+      handler: async (ctx, args) => {
+        const identity = await ctx.auth.getUserIdentity();
+        if (!identity) throw new Error('unauthorized');
+        
+        const board = await ctx.db.insert('boards', {
+          title: args.title,
+          orgId: args.orgId,
+          authorId: identity.subject,
+          authorName: identity.name!,
+          imageUrl: randomImage,
+        });
+        
+        return board;
+      },
+    });
+    ```
+  </Step>
+  
+  <Step title="Set Up Liveblocks">
+    1. Go to [liveblocks.io](https://liveblocks.io) and create an account
+    2. Create a new project
+    3. Copy your secret key
+    4. Configure the Liveblocks authentication endpoint
+    
+    Liveblocks configuration is in `liveblocks.config.ts:11-54`:
+    
+    ```typescript
+    import { createClient } from '@liveblocks/client';
+    
+    const client = createClient({
+      throttle: 16, // 60fps updates
+      authEndpoint: '/api/liveblocks-auth',
+    });
+    
+    type Storage = {
+      layers: LiveMap<string, LiveObject<Layer>>;
+      layerIds: LiveList<string>;
+    };
+    
+    type Presence = {
+      cursor: { x: number; y: number } | null;
+      selection: string[];
+    };
+    ```
+    
+    Create the authentication endpoint at `app/api/liveblocks-auth/route.ts`:
+    
+    ```typescript
+    import { Liveblocks } from '@liveblocks/node';
+    import { auth, currentUser } from '@clerk/nextjs';
+    
+    const liveblocks = new Liveblocks({
+      secret: process.env.LIVEBLOCKS_SECRET_KEY!,
+    });
+    
+    export async function POST(request: Request) {
+      const clerkUser = await currentUser();
+      if (!clerkUser) return new Response('Unauthorized', { status: 401 });
+      
+      const session = liveblocks.prepareSession(
+        clerkUser.id,
+        { userInfo: { name: clerkUser.firstName!, picture: clerkUser.imageUrl } }
+      );
+      
+      const { room } = await request.json();
+      session.allow(room, session.FULL_ACCESS);
+      
+      const { status, body } = await session.authorize();
+      return new Response(body, { status });
+    }
+    ```
+  </Step>
+  
+  <Step title="Run the Development Server">
+    Start the Next.js development server:
+    
+    <CodeGroup>
+    ```bash npm
+    npm run dev
+    ```
+    
+    ```bash yarn
+    yarn dev
+    ```
+    
+    ```bash pnpm
+    pnpm dev
+    ```
+    
+    ```bash bun
+    bun dev
+    ```
+    </CodeGroup>
+    
+    The application will be available at [http://localhost:3000](http://localhost:3000)
+    
+    <Note>
+      Make sure Convex is also running (`npx convex dev`) in a separate terminal for the backend to work.
+    </Note>
+  </Step>
+</Steps>
+
+## Project Structure
+
+Understand the TaskForge Studio codebase:
+
+```
+project-root/
+├── app/
+│   ├── (dashboard)/              # Dashboard pages
+│   │   ├── page.tsx              # Main dashboard
+│   │   └── _components/
+│   │       ├── board-list.tsx    # Board grid display
+│   │       ├── empty-org.tsx     # Organization creation prompt
+│   │       └── board-card.tsx    # Individual board cards
+│   ├── board/
+│   │   └── [boardId]/            # Dynamic board routes
+│   │       ├── page.tsx          # Board page wrapper
+│   │       └── _components/
+│   │           ├── canvas.tsx    # Main canvas component
+│   │           ├── toolbar.tsx   # Drawing tools
+│   │           ├── info.tsx      # Board info header
+│   │           └── participants.tsx  # Live participants
+│   └── api/
+│       └── liveblocks-auth/      # Liveblocks authentication
+├── convex/
+│   ├── board.ts                  # Board CRUD operations
+│   ├── boards.ts                 # Board queries
+│   └── schema.ts                 # Database schema
+├── types/
+│   └── canvas.ts                 # Canvas TypeScript types
+├── liveblocks.config.ts          # Liveblocks configuration
+├── components/
+│   └── ui/                       # Reusable UI components
+├── lib/
+│   └── utils.ts                  # Utility functions
+└── package.json                  # Dependencies
+```
+
+### Key Files
+
+<CardGroup cols={2}>
+  <Card title="canvas.tsx" icon="paintbrush">
+    **Line 46**: Main canvas component  
+    Handles all drawing operations, layer management, and real-time collaboration.
+  </Card>
+  
+  <Card title="board.ts" icon="database">
+    **Convex mutations**: Create, update, delete, favorite operations  
+    Backend logic for board management.
+  </Card>
+  
+  <Card title="liveblocks.config.ts" icon="users">
+    **Line 11**: Liveblocks client setup  
+    Real-time presence and storage configuration.
+  </Card>
+  
+  <Card title="canvas.ts (types)" icon="code">
+    **Layer types**: Rectangle, Ellipse, Text, Note, Path  
+    TypeScript definitions for canvas objects.
+  </Card>
+</CardGroup>
+
+## Building for Production
+
+<Steps>
+  <Step title="Build the Application">
+    Create an optimized production build:
+    
+    ```bash
+    npm run build
+    ```
+    
+    This will:
+    - Compile TypeScript
+    - Optimize React components
+    - Bundle and minify assets
+    - Generate static pages where possible
+  </Step>
+  
+  <Step title="Test Production Build Locally">
+    Run the production server locally:
+    
+    ```bash
+    npm run start
+    ```
+    
+    Visit [http://localhost:3000](http://localhost:3000) to test the production build.
+  </Step>
+</Steps>
+
+## Deployment Options
+
+### Deploy to Vercel (Recommended)
+
+TaskForge Studio is optimized for Vercel deployment:
+
+<Steps>
+  <Step title="Connect to Vercel">
+    1. Push your code to GitHub, GitLab, or Bitbucket
+    2. Go to [vercel.com](https://vercel.com) and import your repository
+    3. Vercel will automatically detect Next.js
+  </Step>
+  
+  <Step title="Configure Environment Variables">
+    Add all environment variables from `.env.local` to Vercel:
+    
+    - Go to Project Settings > Environment Variables
+    - Add each variable (Clerk keys, Convex URL, Liveblocks keys)
+    - Make sure to set them for Production, Preview, and Development
+  </Step>
+  
+  <Step title="Deploy Convex to Production">
+    ```bash
+    npx convex deploy
+    ```
+    
+    This creates a production Convex deployment and provides a production URL.
+    Update `NEXT_PUBLIC_CONVEX_URL` in Vercel with the production URL.
+  </Step>
+  
+  <Step title="Update Clerk & Liveblocks">
+    - **Clerk**: Add your Vercel domain to allowed origins
+    - **Liveblocks**: Update CORS settings to include your domain
+  </Step>
+  
+  <Step title="Deploy">
+    Click **Deploy** in Vercel. Your application will be live in minutes!
+  </Step>
+</Steps>
+
+### Alternative Platforms
+
+<CardGroup cols={2}>
+  <Card title="Netlify" icon="cloud">
+    - Connect your Git repository
+    - Set build command: `npm run build`
+    - Set publish directory: `.next`
+    - Add environment variables
+  </Card>
+  
+  <Card title="Self-Hosted" icon="server">
+    - Build with `npm run build`
+    - Run with `npm start`
+    - Use PM2 or Docker for process management
+    - Configure reverse proxy (Nginx/Apache)
+  </Card>
+  
+  <Card title="Railway" icon="train">
+    - Import from GitHub
+    - Railway auto-detects Next.js
+    - Add environment variables
+    - Deploy with one click
+  </Card>
+  
+  <Card title="Docker" icon="docker">
+    Create a `Dockerfile`:
+    ```dockerfile
+    FROM node:20-alpine
+    WORKDIR /app
+    COPY package*.json ./
+    RUN npm install
+    COPY . .
+    RUN npm run build
+    CMD ["npm", "start"]
+    ```
+  </Card>
+</CardGroup>
+
+## Configuration
+
+### Clerk Configuration
+
+**Organization Settings**: Enable organizations in Clerk dashboard
+
+```typescript
+// app/(dashboard)/_components/empty-org.tsx:21-33
+<CreateOrganization
+  routing='hash'
+  skipInvitationScreen={true}
+  appearance={{
+    elements: {
+      cardBox: {
+        boxShadow: 'none',
+        border: 'none',
+      },
+    },
+  }}
+/>
+```
+
+### Convex Schema
+
+Define your database schema in `convex/schema.ts`:
+
+```typescript
+import { defineSchema, defineTable } from 'convex/server';
+import { v } from 'convex/values';
+
+export default defineSchema({
+  boards: defineTable({
+    title: v.string(),
+    orgId: v.string(),
+    authorId: v.string(),
+    authorName: v.string(),
+    imageUrl: v.string(),
+  })
+    .index('by_org', ['orgId'])
+    .searchIndex('search_title', {
+      searchField: 'title',
+      filterFields: ['orgId'],
+    }),
+  
+  userFavorites: defineTable({
+    userId: v.string(),
+    boardId: v.id('boards'),
+    orgId: v.string(),
+  })
+    .index('by_user_board', ['userId', 'boardId'])
+    .index('by_user_board_org', ['userId', 'boardId', 'orgId']),
+});
+```
+
+### Liveblocks Room Configuration
+
+```typescript
+// Maximum layers per board from canvas.tsx:40
+const MAX_LAYERS = 100;
+
+// Canvas state types from types/canvas.ts:22-28
+export enum LayerType {
+  Rectangle,
+  Ellipse,
+  Path,
+  Text,
+  Note,
+}
+```
+
+## Troubleshooting
+
+<Warning>
+  **Common Issues**:
+</Warning>
+
+### Authentication Not Working
+
+- Verify Clerk environment variables are set correctly
+- Check that your domain is added to Clerk's allowed origins
+- Ensure organizations are enabled in Clerk dashboard
+
+### Convex Connection Failed
+
+- Make sure `npx convex dev` is running during development
+- Verify `NEXT_PUBLIC_CONVEX_URL` matches your deployment
+- Check that Clerk integration is configured in Convex dashboard
+
+### Liveblocks Not Syncing
+
+- Verify authentication endpoint at `/api/liveblocks-auth` is working
+- Check CORS settings in Liveblocks dashboard
+- Ensure `LIVEBLOCKS_SECRET_KEY` is set correctly
+
+### Build Errors
+
+- Clear `.next` folder: `rm -rf .next`
+- Delete `node_modules`: `rm -rf node_modules && npm install`
+- Check TypeScript errors: `npx tsc --noEmit`
+
+## Performance Optimization
+
+<Note>
+  TaskForge Studio includes several performance optimizations:
+</Note>
+
+- **Layer Limit**: Maximum 100 layers per board (defined in `canvas.tsx:40`)
+- **Liveblocks Throttling**: Updates throttled to 16ms (~60fps)
+- **Suspense Boundaries**: React Suspense for smooth loading states
+- **Optimistic Updates**: UI updates immediately before server confirmation
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Learn how to use TaskForge Studio and create your first board
+  </Card>
+  
+  <Card title="Canvas API" icon="code">
+    Explore the layer types and canvas operations
+  </Card>
+  
+  <Card title="Customization" icon="palette">
+    Customize colors, themes, and UI components
+  </Card>
+  
+  <Card title="Contributing" icon="code-branch">
+    Contribute to TaskForge Studio development
+  </Card>
+</CardGroup>
+
+---
+
+<Note>
+  Need help? Check the troubleshooting section above or review the source code in the repository.
+</Note>

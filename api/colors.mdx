@@ -1,0 +1,297 @@
+---
+title: "Colors & Geometry"
+description: "Color, positioning, and geometry types for TaskForge Studio canvas"
+---
+
+## Color Type
+
+Represents an RGB color value used throughout the canvas for fills, strokes, and other color properties.
+
+```typescript
+type Color = {
+  r: number;
+  g: number;
+  b: number;
+};
+```
+
+<ResponseField name="r" type="number" required>
+  Red channel value (0-255)
+</ResponseField>
+
+<ResponseField name="g" type="number" required>
+  Green channel value (0-255)
+</ResponseField>
+
+<ResponseField name="b" type="number" required>
+  Blue channel value (0-255)
+</ResponseField>
+
+### Usage Example
+
+```typescript
+import { Color } from '@/types/canvas';
+
+const redColor: Color = { r: 255, g: 0, b: 0 };
+const greenColor: Color = { r: 0, g: 255, b: 0 };
+const customColor: Color = { r: 123, g: 45, b: 67 };
+
+// Convert to CSS color string
+const cssColor = `rgb(${redColor.r},${redColor.g},${redColor.b})`;
+```
+
+## Point Type
+
+Represents a 2D coordinate point on the canvas.
+
+```typescript
+type Point = {
+  x: number;
+  y: number;
+};
+```
+
+<ResponseField name="x" type="number" required>
+  X coordinate in pixels
+</ResponseField>
+
+<ResponseField name="y" type="number" required>
+  Y coordinate in pixels
+</ResponseField>
+
+### Usage Example
+
+```typescript
+import { Point } from '@/types/canvas';
+
+const origin: Point = { x: 0, y: 0 };
+const cursorPosition: Point = { x: 150, y: 200 };
+
+// Calculate distance between points
+function distance(p1: Point, p2: Point): number {
+  return Math.sqrt(
+    Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)
+  );
+}
+```
+
+## Camera Type
+
+Represents the viewport's pan offset on the canvas. Used to implement pan/zoom functionality.
+
+```typescript
+type Camera = {
+  x: number;
+  y: number;
+};
+```
+
+<ResponseField name="x" type="number" required>
+  Horizontal pan offset in pixels
+</ResponseField>
+
+<ResponseField name="y" type="number" required>
+  Vertical pan offset in pixels
+</ResponseField>
+
+### Usage Example
+
+```typescript
+import { Camera } from '@/types/canvas';
+import { useState } from 'react';
+
+const [camera, setCamera] = useState<Camera>({ x: 0, y: 0 });
+
+function onWheel(e: React.WheelEvent) {
+  setCamera((camera) => ({
+    x: camera.x - e.deltaX,
+    y: camera.y - e.deltaY,
+  }));
+}
+
+// Apply camera transform to SVG group
+<g style={{ transform: `translate(${camera.x}px, ${camera.y}px)` }}>
+  {/* Canvas content */}
+</g>
+```
+
+## XYWH Type
+
+Represents a rectangular bounding box with position and dimensions.
+
+```typescript
+type XYWH = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+```
+
+<ResponseField name="x" type="number" required>
+  X coordinate of the top-left corner
+</ResponseField>
+
+<ResponseField name="y" type="number" required>
+  Y coordinate of the top-left corner
+</ResponseField>
+
+<ResponseField name="width" type="number" required>
+  Width in pixels
+</ResponseField>
+
+<ResponseField name="height" type="number" required>
+  Height in pixels
+</ResponseField>
+
+### Usage Example
+
+```typescript
+import { XYWH } from '@/types/canvas';
+
+const bounds: XYWH = {
+  x: 100,
+  y: 150,
+  width: 200,
+  height: 100,
+};
+
+// Check if point is inside bounds
+function isPointInBounds(point: Point, bounds: XYWH): boolean {
+  return (
+    point.x >= bounds.x &&
+    point.x <= bounds.x + bounds.width &&
+    point.y >= bounds.y &&
+    point.y <= bounds.y + bounds.height
+  );
+}
+```
+
+## Side Enum
+
+Represents the edges and corners of a bounding box, used for resize operations. Values are bit flags that can be combined.
+
+```typescript
+enum Side {
+  Top = 1,
+  Bottom = 2,
+  Left = 4,
+  Right = 8,
+}
+```
+
+<ParamField path="Top" type="1">
+  Top edge (binary: 0001)
+</ParamField>
+
+<ParamField path="Bottom" type="2">
+  Bottom edge (binary: 0010)
+</ParamField>
+
+<ParamField path="Left" type="4">
+  Left edge (binary: 0100)
+</ParamField>
+
+<ParamField path="Right" type="8">
+  Right edge (binary: 1000)
+</ParamField>
+
+### Combining Sides
+
+Since `Side` uses bit flags, you can combine values to represent corners:
+
+```typescript
+import { Side } from '@/types/canvas';
+
+const topLeft = Side.Top | Side.Left;        // 5 (0101)
+const topRight = Side.Top | Side.Right;      // 9 (1001)
+const bottomLeft = Side.Bottom | Side.Left;  // 6 (0110)
+const bottomRight = Side.Bottom | Side.Right; // 10 (1010)
+```
+
+### Usage Example
+
+```typescript
+import { Side, XYWH } from '@/types/canvas';
+
+function onResizeHandlePointerDown(corner: Side, initialBounds: XYWH) {
+  setCanvasState({
+    mode: CanvasMode.Resizing,
+    initialBounds,
+    corner,
+  });
+}
+
+// Check which sides are being resized
+function isResizingTop(corner: Side): boolean {
+  return (corner & Side.Top) !== 0;
+}
+
+function isResizingLeft(corner: Side): boolean {
+  return (corner & Side.Left) !== 0;
+}
+```
+
+## Common Patterns
+
+### Converting Pointer Events to Canvas Points
+
+```typescript
+import { Point, Camera } from '@/types/canvas';
+
+function pointerEventToCanvasPoint(
+  e: React.PointerEvent,
+  camera: Camera
+): Point {
+  return {
+    x: e.clientX - camera.x,
+    y: e.clientY - camera.y,
+  };
+}
+```
+
+### Color State Management
+
+```typescript
+import { useState } from 'react';
+import { Color } from '@/types/canvas';
+
+const [lastUsedColor, setLastUsedColor] = useState<Color>({
+  r: 255,
+  g: 0,
+  b: 0,
+});
+```
+
+### Boundary Calculations
+
+```typescript
+import { XYWH, Point } from '@/types/canvas';
+
+function getBoundsFromPoints(start: Point, end: Point): XYWH {
+  return {
+    x: Math.min(start.x, end.x),
+    y: Math.min(start.y, end.y),
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y),
+  };
+}
+```
+
+### Selection Net Rendering
+
+```typescript
+import { CanvasMode } from '@/types/canvas';
+
+{canvasState.mode === CanvasMode.SelectionNet &&
+  canvasState.current != null && (
+    <rect
+      className="fill-blue-500/5 stroke-blue-500 stroke-1"
+      x={Math.min(canvasState.origin.x, canvasState.current.x)}
+      y={Math.min(canvasState.origin.y, canvasState.current.y)}
+      width={Math.abs(canvasState.origin.x - canvasState.current.x)}
+      height={Math.abs(canvasState.origin.y - canvasState.current.y)}
+    />
+  )
+}
+```

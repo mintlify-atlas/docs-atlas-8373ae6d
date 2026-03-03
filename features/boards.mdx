@@ -1,0 +1,237 @@
+---
+title: Boards
+description: Create, manage, and organize your collaborative whiteboards in TaskForge Studio
+---
+
+Boards are the foundation of TaskForge Studio, providing dedicated workspaces where teams can collaborate in real-time. Each board is a persistent canvas where you can draw, add shapes, sticky notes, and text.
+
+## Creating a Board
+
+Boards are created within your organization's workspace and are accessible to all team members.
+
+<Steps>
+  <Step title="Navigate to your team dashboard">
+    Select your organization from the organization switcher in the sidebar.
+  </Step>
+  
+  <Step title="Click the New Board button">
+    The blue "+ New Board" card appears in your board grid.
+  </Step>
+  
+  <Step title="Automatic creation and navigation">
+    A new board is created with the title "Untitled" and you're immediately redirected to the canvas.
+  </Step>
+</Steps>
+
+### Board Creation Implementation
+
+Boards are created using the Convex mutation in `convex/board.ts:13-37`:
+
+```typescript
+export const create = mutation({
+  args: {
+    orgId: v.string(),
+    title: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+
+    if (!identity) {
+      throw new Error('unauthorized');
+    }
+
+    const randomImage = images[Math.floor(Math.random() * images.length)];
+
+    const board = await ctx.db.insert('boards', {
+      title: args.title,
+      orgId: args.orgId,
+      authorId: identity.subject,
+      authorName: identity.name!,
+      imageUrl: randomImage,
+    });
+
+    return board;
+  },
+});
+```
+
+<Note>
+Each new board is automatically assigned a random placeholder image from a set of 6 predefined images.
+</Note>
+
+## Managing Boards
+
+### Renaming Boards
+
+You can rename any board by updating its title. The update operation includes validation:
+
+- Title is required (cannot be empty)
+- Maximum length of 60 characters
+- Whitespace is automatically trimmed
+
+Implementation in `convex/board.ts:64-86`:
+
+```typescript
+export const update = mutation({
+  args: {
+    id: v.id('boards'),
+    title: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const title = args.title.trim();
+
+    if (!title) throw new Error('Title is required');
+    if (title.length > 60)
+      throw new Error('Title cannot be more than 60 characters');
+
+    const board = await ctx.db.patch(args.id, {
+      title: args.title,
+    });
+
+    return board;
+  },
+});
+```
+
+### Deleting Boards
+
+When you delete a board:
+
+1. All associated favorites are automatically removed
+2. The board is permanently deleted from the database
+3. All canvas data is removed
+
+<Warning>
+Deleting a board is permanent and cannot be undone. All drawing data, layers, and collaboration history will be lost.
+</Warning>
+
+## Board Organization
+
+### Viewing Boards
+
+Boards can be viewed in two main ways:
+
+<CardGroup cols={2}>
+  <Card title="Team Boards" icon="layout-grid">
+    View all boards created within your organization. This is the default view showing all collaborative workspaces.
+  </Card>
+  
+  <Card title="Favorite Boards" icon="star">
+    Quick access to boards you've marked as favorites for faster navigation.
+  </Card>
+</CardGroup>
+
+### Searching Boards
+
+TaskForge Studio includes full-text search across board titles:
+
+- Real-time search as you type
+- Search is scoped to your current organization
+- Works with both team boards and favorites
+
+Implementation in `convex/boards.ts:38-44`:
+
+```typescript
+if (title) {
+  boards = await ctx.db
+    .query('boards')
+    .withSearchIndex('search_title', (q) =>
+      q.search('title', title).eq('orgId', args.orgId)
+    )
+    .collect();
+}
+```
+
+## Favorites
+
+Favorite boards for quick access to your most-used workspaces.
+
+### Adding to Favorites
+
+You can favorite any board within your organization. The system:
+
+- Prevents duplicate favorites
+- Associates favorites with your user ID and organization
+- Maintains favorites across sessions
+
+Implementation in `convex/board.ts:88-122`:
+
+```typescript
+export const favorite = mutation({
+  args: { id: v.id('boards'), orgId: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error('Unauthorized');
+
+    const exisitingFavorite = await ctx.db
+      .query('userFavorites')
+      .withIndex('by_user_board_org', (q) =>
+        q.eq('userId', userId).eq('boardId', board._id).eq('orgId', args.orgId)
+      )
+      .unique();
+
+    if (exisitingFavorite) {
+      throw new Error('Board already in favorite list');
+    }
+
+    await ctx.db.insert('userFavorites', {
+      userId,
+      boardId: board._id,
+      orgId: args.orgId,
+    });
+  },
+});
+```
+
+### Removing from Favorites
+
+Remove boards from your favorites list at any time. The unfavorite operation:
+
+- Validates the board exists in your favorites
+- Removes the favorite association
+- Keeps the board accessible in team boards
+
+<Note>
+Unfavoriting a board doesn't delete it - the board remains in your team's workspace.
+</Note>
+
+## Board Metadata
+
+Each board stores the following information:
+
+| Field | Description |
+|-------|-------------|
+| `title` | Board name (max 60 characters) |
+| `orgId` | Organization identifier |
+| `authorId` | ID of the user who created the board |
+| `authorName` | Name of the board creator |
+| `imageUrl` | Placeholder thumbnail image |
+| `_creationTime` | Timestamp of board creation |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Organize with descriptive names">
+    Use clear, descriptive titles that indicate the board's purpose or project. This makes searching and browsing more efficient for your team.
+  </Accordion>
+  
+  <Accordion title="Use favorites strategically">
+    Favorite boards you access frequently or are currently working on. Keep your favorites list focused to maximize its usefulness.
+  </Accordion>
+  
+  <Accordion title="Clean up unused boards">
+    Periodically review and delete boards that are no longer needed to keep your workspace organized and performant.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Canvas" icon="paintbrush" href="/features/canvas">
+    Learn about drawing tools and canvas interactions
+  </Card>
+  
+  <Card title="Collaboration" icon="users" href="/features/collaboration">
+    Discover real-time collaboration features
+  </Card>
+</CardGroup>

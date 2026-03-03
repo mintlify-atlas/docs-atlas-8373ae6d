@@ -1,0 +1,219 @@
+---
+title: 'useSelectionBounds'
+description: 'Calculate the bounding box of currently selected canvas layers'
+---
+
+## Overview
+
+The `useSelectionBounds` hook calculates and returns the bounding box (minimum enclosing rectangle) for all currently selected layers on the canvas. It's essential for rendering selection UI, positioning tools, and handling multi-layer transformations.
+
+## Usage
+
+```tsx
+import { useSelectionBounds } from '@/hooks/use-selection-bounds';
+
+function SelectionBox() {
+  const bounds = useSelectionBounds();
+
+  if (!bounds) return null;
+
+  return (
+    <rect
+      x={bounds.x}
+      y={bounds.y}
+      width={bounds.width}
+      height={bounds.height}
+      className='selection-outline'
+    />
+  );
+}
+```
+
+## Parameters
+
+This hook does not accept any parameters.
+
+## Return Value
+
+<ResponseField name="bounds" type="XYWH | null">
+  Returns the bounding box coordinates and dimensions, or `null` if no layers are selected.
+
+  **XYWH Type:**
+  ```typescript
+  type XYWH = {
+    x: number;      // Left edge of the bounding box
+    y: number;      // Top edge of the bounding box
+    width: number;  // Total width of the bounding box
+    height: number; // Total height of the bounding box
+  };
+  ```
+</ResponseField>
+
+## How It Works
+
+1. **Get Selection**: Retrieves the current user's selected layer IDs from presence state
+2. **Fetch Layers**: Maps selection IDs to actual layer objects from storage
+3. **Calculate Bounds**: Computes the minimum bounding box that encompasses all selected layers:
+   - Finds the leftmost x-coordinate
+   - Finds the topmost y-coordinate
+   - Finds the rightmost edge (x + width)
+   - Finds the bottommost edge (y + height)
+   - Calculates the final width and height
+4. **Returns**: The calculated bounding box or `null` if no layers are selected
+
+## Real-World Examples
+
+### Positioning Selection Tools
+
+```tsx
+// source/app/board/[boardId]/_components/selection-tools.tsx:78
+import { useSelectionBounds } from '@/hooks/use-selection-bounds';
+
+export const SelectionTools = ({ camera, setLastUsedColor }) => {
+  const selectionBounds = useSelectionBounds();
+
+  if (!selectionBounds) return null;
+
+  // Position the toolbar above the selection
+  const x = selectionBounds.width / 2 + selectionBounds.x + camera.x;
+  const y = selectionBounds.y + camera.y;
+
+  return (
+    <div
+      className='absolute p-3 rounded-xl bg-white shadow-sm border'
+      style={{
+        transform: `translate(calc(${x}px - 50%), calc(${y - 16}px - 100%))`,
+      }}
+    >
+      <ColorPicker onChange={setFill} />
+      {/* Other tools */}
+    </div>
+  );
+};
+```
+
+### Rendering Selection Box
+
+```tsx
+// source/app/board/[boardId]/_components/selection-box.tsx:24
+import { useSelectionBounds } from '@/hooks/use-selection-bounds';
+import { Side, XYWH } from '@/types/canvas';
+
+const HANDLE_WIDTH = 8;
+
+export const SelectionBox = ({ onResizePointerDown }) => {
+  const bounds = useSelectionBounds();
+
+  if (!bounds) return null;
+
+  return (
+    <>
+      {/* Main selection rectangle */}
+      <rect
+        className='fill-transparent stroke-blue-500 stroke-2'
+        style={{
+          transform: `translate(${bounds.x}px, ${bounds.y}px)`,
+        }}
+        x={0}
+        y={0}
+        width={bounds.width}
+        height={bounds.height}
+      />
+      
+      {/* Resize handles */}
+      <rect
+        className='fill-white stroke-1 stroke-blue-500'
+        style={{
+          cursor: 'nwse-resize',
+          width: `${HANDLE_WIDTH}px`,
+          height: `${HANDLE_WIDTH}px`,
+          transform: `translate(
+            ${bounds.x - HANDLE_WIDTH / 2}px,
+            ${bounds.y - HANDLE_WIDTH / 2}px
+          )`,
+        }}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onResizePointerDown(Side.Top + Side.Left, bounds);
+        }}
+      />
+      {/* More resize handles... */}
+    </>
+  );
+};
+```
+
+## Implementation Details
+
+The hook uses a `boundingBox` helper function that:
+- Returns `null` for empty selections
+- Initializes bounds from the first layer
+- Expands bounds to include each subsequent layer
+- Calculates the final width and height from the outer edges
+
+```typescript
+const boundingBox = (layers: Layer[]): XYWH | null => {
+  const first = layers[0];
+  if (!first) return null;
+
+  let left = first.x;
+  let right = first.x + first.width;
+  let top = first.y;
+  let bottom = first.y + first.height;
+
+  for (let i = 1; i < layers.length; i++) {
+    const { x, y, width, height } = layers[i];
+    
+    if (left > x) left = x;
+    if (right < x + width) right = x + width;
+    if (top > y) top = y;
+    if (bottom < y + height) bottom = y + height;
+  }
+
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+};
+```
+
+## Performance Optimization
+
+<Note>
+  The hook uses `shallow` comparison from `@liveblocks/react` to prevent unnecessary re-renders when the bounding box values haven't actually changed.
+</Note>
+
+## Common Use Cases
+
+1. **Selection Visualization**: Draw a rectangle around selected layers
+2. **Tool Positioning**: Place editing tools relative to the selection
+3. **Resize Operations**: Provide resize handles at the bounds corners and edges
+4. **Collision Detection**: Check if selections intersect with other elements
+5. **Batch Transformations**: Apply transformations to multiple layers as a group
+
+## Type Definitions
+
+```typescript
+type Layer = RectangleLayer | EllipseLayer | PathLayer | TextLayer | NoteLayer;
+
+type XYWH = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+```
+
+<Warning>
+  Always check if the returned value is `null` before using it. The hook returns `null` when no layers are selected or when selected layers no longer exist in storage.
+</Warning>
+
+## Best Practices
+
+- Always handle the `null` case in your component rendering logic
+- Use the bounds for positioning UI elements that should appear near the selection
+- Combine with camera coordinates when rendering in screen space
+- Cache expensive calculations that depend on bounds using `useMemo`
+- Consider debouncing updates if working with frequently changing selections

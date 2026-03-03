@@ -1,0 +1,131 @@
+---
+title: 'useApiMutation'
+description: 'A custom hook for handling Convex mutations with pending state management'
+---
+
+## Overview
+
+The `useApiMutation` hook is a wrapper around Convex's `useMutation` hook that provides automatic pending state management for mutation operations. It simplifies handling loading states during API mutations and provides a consistent interface for executing mutations with proper error handling.
+
+## Usage
+
+```tsx
+import { useApiMutation } from '@/hooks/use-api-mutation';
+import { api } from '@/convex/_generated/api';
+
+function MyComponent() {
+  const { mutate, pending } = useApiMutation(api.board.create);
+
+  const handleCreate = () => {
+    mutate({ orgId: '123', title: 'New Board' })
+      .then((result) => {
+        console.log('Success:', result);
+      })
+      .catch((error) => {
+        console.error('Error:', error);
+      });
+  };
+
+  return (
+    <button onClick={handleCreate} disabled={pending}>
+      {pending ? 'Creating...' : 'Create Board'}
+    </button>
+  );
+}
+```
+
+## Parameters
+
+<ParamField path="mutationFunction" type="any" required>
+  The Convex mutation function to be executed. Typically imported from your Convex API definitions.
+</ParamField>
+
+## Return Value
+
+The hook returns an object with the following properties:
+
+<ResponseField name="mutate" type="(payload: any) => Promise<any>">
+  An async function that executes the mutation with the provided payload. Returns a promise that resolves with the mutation result or rejects with an error.
+</ResponseField>
+
+<ResponseField name="pending" type="boolean">
+  A boolean flag indicating whether the mutation is currently in progress. Use this to disable buttons or show loading states.
+</ResponseField>
+
+## Real-World Examples
+
+### Creating a Board
+
+```tsx
+// source/app/(dashboard)/_components/new-board-button.tsx:17
+import { useApiMutation } from '@/hooks/use-api-mutation';
+import { api } from '@/convex/_generated/api';
+import { toast } from 'sonner';
+
+export const NewBoardButton = ({ orgId, disabled }) => {
+  const router = useRouter();
+  const { mutate, pending } = useApiMutation(api.board.create);
+
+  const onClick = () => {
+    mutate({
+      orgId,
+      title: 'Untitled',
+    })
+      .then((id) => {
+        toast.success('Board created');
+        router.push(`/board/${id}`);
+      })
+      .catch(() => toast.error('Failed to create board'));
+  };
+
+  return (
+    <button disabled={disabled || pending} onClick={onClick}>
+      New Board
+    </button>
+  );
+};
+```
+
+### Favoriting/Unfavoriting Items
+
+```tsx
+// source/app/(dashboard)/_components/board-card/index.tsx:47
+import { useApiMutation } from '@/hooks/use-api-mutation';
+import { api } from '@/convex/_generated/api';
+
+const { mutate: onFavorite, pending: pendingFavorite } = useApiMutation(
+  api.board.favorite
+);
+
+const { mutate: onUnfavorite, pending: pendingUnFavorite } = useApiMutation(
+  api.board.unfavorite
+);
+
+const toggleFavorite = () => {
+  if (isFavorite) {
+    onUnfavorite({ id: boardId });
+  } else {
+    onFavorite({ id: boardId });
+  }
+};
+```
+
+## Implementation Details
+
+The hook internally:
+1. Maintains a local `pending` state using React's `useState`
+2. Wraps the Convex mutation in a custom `mutate` function
+3. Sets `pending` to `true` before executing the mutation
+4. Resets `pending` to `false` after the mutation completes (success or failure)
+5. Preserves the original promise chain for result handling
+
+<Note>
+  The `pending` state is automatically managed - it's set to `true` when the mutation starts and `false` when it completes, regardless of success or failure.
+</Note>
+
+## Best Practices
+
+- Use the `pending` state to disable UI elements during mutations
+- Always handle both success and error cases in your promise chain
+- Provide user feedback through toast notifications or other UI indicators
+- Destructure with custom names when using multiple mutations in the same component

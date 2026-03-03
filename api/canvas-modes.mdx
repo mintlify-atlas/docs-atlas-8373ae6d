@@ -1,0 +1,278 @@
+---
+title: "Canvas Modes"
+description: "Canvas interaction modes and state management for TaskForge Studio"
+---
+
+## CanvasMode Enum
+
+Defines the different interaction modes available on the canvas. These modes determine how user input is interpreted and what actions can be performed.
+
+```typescript
+enum CanvasMode {
+  None,
+  Pressing,
+  SelectionNet,
+  Translating,
+  Inserting,
+  Resizing,
+  Pencil,
+}
+```
+
+<ParamField path="None" type="0">
+  Default idle state with no active interaction
+</ParamField>
+
+<ParamField path="Pressing" type="1">
+  User has pressed down but hasn't initiated a specific action yet
+</ParamField>
+
+<ParamField path="SelectionNet" type="2">
+  Drawing a selection rectangle to select multiple layers
+</ParamField>
+
+<ParamField path="Translating" type="3">
+  Moving/dragging selected layers across the canvas
+</ParamField>
+
+<ParamField path="Inserting" type="4">
+  Inserting a new layer onto the canvas
+</ParamField>
+
+<ParamField path="Resizing" type="5">
+  Resizing a selected layer by dragging resize handles
+</ParamField>
+
+<ParamField path="Pencil" type="6">
+  Drawing free-form paths with the pencil tool
+</ParamField>
+
+## CanvasState Type
+
+A discriminated union type that represents the current state of the canvas. Each mode can carry additional data specific to that interaction.
+
+```typescript
+type CanvasState =
+  | { mode: CanvasMode.None }
+  | { mode: CanvasMode.SelectionNet; origin: Point; current?: Point }
+  | { mode: CanvasMode.Translating; current: Point }
+  | {
+      mode: CanvasMode.Inserting;
+      layerType:
+        | LayerType.Ellipse
+        | LayerType.Rectangle
+        | LayerType.Text
+        | LayerType.Note;
+    }
+  | { mode: CanvasMode.Pencil }
+  | { mode: CanvasMode.Pressing; origin: Point }
+  | { mode: CanvasMode.Resizing; initialBounds: XYWH; corner: Side };
+```
+
+### None State
+
+```typescript
+{ mode: CanvasMode.None }
+```
+
+<ResponseField name="mode" type="CanvasMode.None" required>
+  No active interaction
+</ResponseField>
+
+### SelectionNet State
+
+```typescript
+{ mode: CanvasMode.SelectionNet; origin: Point; current?: Point }
+```
+
+<ResponseField name="mode" type="CanvasMode.SelectionNet" required>
+  Drawing selection rectangle
+</ResponseField>
+
+<ResponseField name="origin" type="Point" required>
+  Starting point where the selection began. See [Point type](/api/colors#point-type).
+</ResponseField>
+
+<ResponseField name="current" type="Point">
+  Current pointer position while dragging the selection net
+</ResponseField>
+
+### Translating State
+
+```typescript
+{ mode: CanvasMode.Translating; current: Point }
+```
+
+<ResponseField name="mode" type="CanvasMode.Translating" required>
+  Moving selected layers
+</ResponseField>
+
+<ResponseField name="current" type="Point" required>
+  Current pointer position during the drag operation. See [Point type](/api/colors#point-type).
+</ResponseField>
+
+### Inserting State
+
+```typescript
+{
+  mode: CanvasMode.Inserting;
+  layerType:
+    | LayerType.Ellipse
+    | LayerType.Rectangle
+    | LayerType.Text
+    | LayerType.Note;
+}
+```
+
+<ResponseField name="mode" type="CanvasMode.Inserting" required>
+  Inserting a new layer
+</ResponseField>
+
+<ResponseField name="layerType" type="LayerType" required>
+  The type of layer being inserted. Can be Ellipse, Rectangle, Text, or Note. Path layers are created via Pencil mode.
+</ResponseField>
+
+### Pencil State
+
+```typescript
+{ mode: CanvasMode.Pencil }
+```
+
+<ResponseField name="mode" type="CanvasMode.Pencil" required>
+  Drawing free-form paths
+</ResponseField>
+
+### Pressing State
+
+```typescript
+{ mode: CanvasMode.Pressing; origin: Point }
+```
+
+<ResponseField name="mode" type="CanvasMode.Pressing" required>
+  Pointer is down but action not yet determined
+</ResponseField>
+
+<ResponseField name="origin" type="Point" required>
+  Point where the press started. See [Point type](/api/colors#point-type).
+</ResponseField>
+
+### Resizing State
+
+```typescript
+{ mode: CanvasMode.Resizing; initialBounds: XYWH; corner: Side }
+```
+
+<ResponseField name="mode" type="CanvasMode.Resizing" required>
+  Resizing a layer
+</ResponseField>
+
+<ResponseField name="initialBounds" type="XYWH" required>
+  The layer's dimensions before resizing began. See [XYWH type](/api/colors#xywh-type).
+</ResponseField>
+
+<ResponseField name="corner" type="Side" required>
+  Which corner or edge is being dragged. See [Side enum](/api/colors#side-enum).
+</ResponseField>
+
+## Usage Examples
+
+### State Management
+
+```typescript
+import { useState } from 'react';
+import { CanvasMode, CanvasState } from '@/types/canvas';
+
+const [canvasState, setCanvasState] = useState<CanvasState>({
+  mode: CanvasMode.None,
+});
+```
+
+### Handling Pointer Events
+
+```typescript
+import { CanvasMode, Point } from '@/types/canvas';
+
+function onPointerDown(e: React.PointerEvent) {
+  const point: Point = pointerEventToCanvasPoint(e, camera);
+  
+  if (canvasState.mode === CanvasMode.Inserting) {
+    return;
+  }
+  
+  setCanvasState({ 
+    mode: CanvasMode.Pressing, 
+    origin: point 
+  });
+}
+```
+
+### Mode Transitions
+
+```typescript
+import { CanvasMode, CanvasState } from '@/types/canvas';
+
+function onPointerMove(current: Point) {
+  if (canvasState.mode === CanvasMode.Pressing) {
+    // Transition to SelectionNet if movement detected
+    startMultiSelection(current, canvasState.origin);
+  } else if (canvasState.mode === CanvasMode.SelectionNet) {
+    updateSelectionNet(current, canvasState.origin);
+  } else if (canvasState.mode === CanvasMode.Translating) {
+    translateSelectedLayers(current);
+  } else if (canvasState.mode === CanvasMode.Resizing) {
+    resizeSelectedLayer(current);
+  }
+}
+```
+
+### Inserting Layers
+
+```typescript
+import { CanvasMode, LayerType } from '@/types/canvas';
+
+function startInsertingRectangle() {
+  setCanvasState({
+    mode: CanvasMode.Inserting,
+    layerType: LayerType.Rectangle,
+  });
+}
+
+function onPointerUp(e: React.PointerEvent) {
+  const point = pointerEventToCanvasPoint(e, camera);
+  
+  if (canvasState.mode === CanvasMode.Inserting) {
+    insertLayer(canvasState.layerType, point);
+  } else {
+    setCanvasState({ mode: CanvasMode.None });
+  }
+}
+```
+
+### Resizing with Initial Bounds
+
+```typescript
+import { CanvasMode, XYWH, Side } from '@/types/canvas';
+
+function onResizeHandlePointerDown(corner: Side, initialBounds: XYWH) {
+  history.pause();
+  setCanvasState({
+    mode: CanvasMode.Resizing,
+    initialBounds,
+    corner,
+  });
+}
+```
+
+### Type Guards
+
+```typescript
+import { CanvasState, CanvasMode } from '@/types/canvas';
+
+function isTranslating(state: CanvasState): state is { mode: CanvasMode.Translating; current: Point } {
+  return state.mode === CanvasMode.Translating;
+}
+
+function isInserting(state: CanvasState): state is { mode: CanvasMode.Inserting; layerType: LayerType } {
+  return state.mode === CanvasMode.Inserting;
+}
+```

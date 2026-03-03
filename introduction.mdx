@@ -1,0 +1,147 @@
+---
+title: "Welcome to TaskForge Studio"
+description: "A powerful real-time collaborative whiteboard application for teams to brainstorm, design, and collaborate seamlessly"
+---
+
+# Welcome to TaskForge Studio
+
+TaskForge Studio is a modern SaaS collaborative whiteboard platform built for teams that need to work together in real-time. Create unlimited boards, add shapes, text, and sticky notes, and watch as your team collaborates with live cursors and presence indicators.
+
+<Note>
+  TaskForge Studio is built with Next.js 14, Convex for backend services, Liveblocks for real-time collaboration, and Clerk for authentication.
+</Note>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Real-Time Collaboration" icon="users">
+    See your teammates' cursors and selections in real-time. Multiple users can work on the same board simultaneously with instant updates.
+  </Card>
+  
+  <Card title="Rich Drawing Tools" icon="paintbrush">
+    Create rectangles, ellipses, text layers, and sticky notes. Customize colors, resize, and move objects freely on an infinite canvas.
+  </Card>
+  
+  <Card title="Organization Management" icon="building">
+    Organize boards by teams using Clerk organizations. Each organization has its own workspace with dedicated boards.
+  </Card>
+  
+  <Card title="Board Management" icon="folder">
+    Create unlimited boards, search through them, mark favorites, and manage access. Each board has its own unique URL for easy sharing.
+  </Card>
+</CardGroup>
+
+## What You Can Build
+
+TaskForge Studio provides a canvas for various use cases:
+
+- **Brainstorming Sessions**: Use sticky notes and text to capture ideas collaboratively
+- **Design Mockups**: Create wireframes and layouts with shapes and text
+- **Team Planning**: Organize projects visually with your team in real-time
+- **Presentations**: Build visual presentations on an infinite canvas
+
+## Technology Stack
+
+TaskForge Studio leverages modern technologies for optimal performance:
+
+<CodeGroup>
+```json package.json
+{
+  "dependencies": {
+    "@clerk/nextjs": "^5.0.5",
+    "@liveblocks/client": "^1.12.0",
+    "@liveblocks/react": "^1.12.0",
+    "convex": "^1.11.2",
+    "next": "14.2.3",
+    "react": "^18"
+  }
+}
+```
+</CodeGroup>
+
+- **Next.js 14**: React framework with App Router for optimal performance
+- **Convex**: Real-time backend database for board storage and queries
+- **Liveblocks**: Real-time collaboration infrastructure for presence and multiplayer
+- **Clerk**: Complete authentication and organization management
+- **Tailwind CSS**: Utility-first styling with Radix UI components
+
+## Quick Links
+
+<CardGroup cols={3}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started with your first board in under 5 minutes
+  </Card>
+  
+  <Card title="Installation" icon="download" href="/installation">
+    Set up your development environment and deploy
+  </Card>
+  
+  <Card title="GitHub Repository" icon="github" href="https://github.com">
+    View the source code and contribute
+  </Card>
+</CardGroup>
+
+## Core Capabilities
+
+### Canvas Tools
+
+The toolbar (located at `app/board/[boardId]/_components/toolbar.tsx:34`) provides these drawing tools:
+
+- **Select**: Default mode for selecting and moving objects
+- **Text**: Add text layers to the canvas
+- **Sticky Notes**: Create colored note cards for ideas
+- **Rectangle**: Draw rectangular shapes
+- **Ellipse**: Create circular and oval shapes
+- **Undo/Redo**: Full history support with keyboard shortcuts (Ctrl/Cmd+Z)
+
+### Real-Time Features
+
+Liveblocks integration provides:
+
+- Live cursor tracking for all connected users
+- Real-time presence indicators showing who's online
+- Synchronized layer updates across all clients
+- Conflict-free collaborative editing
+- Selection state sharing between users
+
+### Board Operations
+
+The Convex backend (defined in `convex/board.ts`) supports:
+
+```typescript
+// Create a new board
+const boardId = await create({
+  orgId: organization.id,
+  title: "My New Board"
+});
+
+// Update board title
+await update({
+  id: boardId,
+  title: "Updated Title"
+});
+
+// Favorite/unfavorite boards
+await favorite({ id: boardId, orgId: organization.id });
+await unFavorite({ id: boardId });
+
+// Delete a board
+await remove({ id: boardId });
+```
+
+<Warning>
+  Board titles are limited to 60 characters. Boards are tied to organizations, so users must be part of an organization to create boards.
+</Warning>
+
+## Getting Started
+
+Ready to dive in? Follow our quickstart guide to:
+
+1. Create your first organization
+2. Set up your first board
+3. Add elements to the canvas
+4. Invite team members to collaborate
+
+<Card title="Continue to Quickstart" icon="arrow-right" href="/quickstart">
+  Learn how to create your first collaborative board
+</Card>
